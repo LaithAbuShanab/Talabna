@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\OptionSelectionType;
 use App\Models\Category;
 use App\Models\OptionGroup;
 use App\Models\Product;
@@ -74,9 +75,16 @@ class ProductSeeder extends Seeder
                 );
 
                 $groupIds = collect($item['options'])
-                    ->map(fn (string $name) => $optionGroups->get($name)?->id)
+                    ->map(fn (string $name) => $optionGroups->get($name))
                     ->filter()
-                    ->mapWithKeys(fn (int $id) => [$id => ['is_required' => true, 'sort_order' => 0]]);
+                    ->mapWithKeys(fn (OptionGroup $group) => [
+                        $group->id => [
+                            // Single-select groups (Size, Bread Type) force a choice;
+                            // multi-select groups (Extras, Sauces) are optional add-ons.
+                            'is_required' => $group->selection_type === OptionSelectionType::Single,
+                            'sort_order' => 0,
+                        ],
+                    ]);
 
                 if ($groupIds->isNotEmpty()) {
                     $product->optionGroups()->sync($groupIds);

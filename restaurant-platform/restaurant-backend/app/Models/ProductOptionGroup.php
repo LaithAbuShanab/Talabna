@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  * carries its own attribute (is_required is a per-product decision — the
  * same "Size" group might be required for pizzas but optional for drinks).
  */
-#[Fillable(['product_id', 'option_group_id', 'is_required', 'sort_order'])]
+#[Fillable(['product_id', 'option_group_id', 'is_required', 'min_select', 'max_select', 'sort_order'])]
 class ProductOptionGroup extends Pivot
 {
     public $incrementing = true;
@@ -23,6 +23,8 @@ class ProductOptionGroup extends Pivot
     {
         return [
             'is_required' => 'boolean',
+            'min_select' => 'integer',
+            'max_select' => 'integer',
             'sort_order' => 'integer',
         ];
     }

@@ -42,7 +42,7 @@ class Product extends Model
     {
         return $this->belongsToMany(OptionGroup::class, 'product_option_groups')
             ->using(ProductOptionGroup::class)
-            ->withPivot(['is_required', 'sort_order'])
+            ->withPivot(['is_required', 'min_select', 'max_select', 'sort_order'])
             ->withTimestamps();
     }
 

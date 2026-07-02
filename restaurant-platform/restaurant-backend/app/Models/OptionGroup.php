@@ -36,7 +36,7 @@ class OptionGroup extends Model
     {
         return $this->belongsToMany(Product::class, 'product_option_groups')
             ->using(ProductOptionGroup::class)
-            ->withPivot(['is_required', 'sort_order'])
+            ->withPivot(['is_required', 'min_select', 'max_select', 'sort_order'])
             ->withTimestamps();
     }
 }

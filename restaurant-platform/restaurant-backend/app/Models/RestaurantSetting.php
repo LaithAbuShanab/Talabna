@@ -26,6 +26,8 @@ use Illuminate\Database\Eloquent\Model;
     'min_order_amount',
     'default_preparation_minutes',
     'is_accepting_orders',
+    'is_tax_enabled',
+    'tax_rate_bps',
 ])]
 class RestaurantSetting extends Model
 {
@@ -41,14 +43,31 @@ class RestaurantSetting extends Model
             'min_order_amount' => 'integer',
             'default_preparation_minutes' => 'integer',
             'is_accepting_orders' => 'boolean',
+            'is_tax_enabled' => 'boolean',
+            'tax_rate_bps' => 'integer',
         ];
     }
 
+    /**
+     * Every default is spelled out explicitly here rather than left to the
+     * migration's column defaults: Eloquent doesn't re-read DB-applied
+     * defaults back into the in-memory model after an insert, so relying on
+     * them left currency_code/min_order_amount/etc. null on a freshly
+     * created row until the next full reload from the database.
+     */
     public static function current(): self
     {
         return static::query()->firstOrCreate(
             ['id' => 1],
-            ['restaurant_name' => config('app.name')],
+            [
+                'restaurant_name' => config('app.name'),
+                'currency_code' => 'JOD',
+                'default_delivery_fee_amount' => 0,
+                'min_order_amount' => 0,
+                'is_accepting_orders' => true,
+                'is_tax_enabled' => false,
+                'tax_rate_bps' => 0,
+            ],
         );
     }
 }

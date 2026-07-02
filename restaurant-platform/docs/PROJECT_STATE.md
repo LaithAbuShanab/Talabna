@@ -1,10 +1,90 @@
 # Project State
 
 Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
-unified quality standards, the full restaurant domain database schema, then
-realistic local dev/demo seed data on top of it.
+unified quality standards, the full restaurant domain database schema,
+realistic local dev/demo seed data, then the cart-pricing domain layer.
 
-## Realistic local dev seed data (this task)
+## Cart pricing domain layer (this task)
+
+`restaurant-backend` only. Full detail is in the new "Cart pricing" section
+of **`docs/DATABASE_SCHEMA.md`** — this is a pointer/summary plus the real
+bug this task caught.
+
+- **New**: `App\DataTransferObjects\Cart\{CartItemInputData,
+  CartPricingRequestData, CartPricedOptionData, CartPricedItemData,
+  CartPricingResultData}`, `App\Services\CartPricingService`,
+  `App\Exceptions\CartPricingException`, `lang/{en,ar}/cart.php`.
+  `CartPricingService::price()` turns a cart (product/option/quantity IDs +
+  delivery type/zone + optional coupon code) into real integer amounts —
+  purely a calculation, **no `Order` is persisted here**.
+- **Schema additions required to make this correct** (not requested
+  directly, but the explicitly-requested validations were impossible
+  without them): `product_option_groups.min_select`/`max_select`
+  (nullable overrides, falls back to is_required/selection_type when
+  null — see docs), and `restaurant_settings.is_tax_enabled`/`tax_rate_bps`
+  (basis points, tax was explicitly required to be "if enabled from
+  restaurant settings" but no such setting existed before this task).
+- **Security property, by construction, not by runtime check**: the DTOs
+  literally have no price field anywhere — a client can only ever supply
+  product/option IDs and a quantity. Every amount comes from a live
+  `Product`/`OptionValue`/`DeliveryZone`/`Coupon`/`RestaurantSetting` lookup
+  inside the service. Proven with a test that reprices after mutating a
+  product's price mid-test and asserts the new price is picked up.
+- **Validation is fail-fast**, first violation throws
+  `CartPricingException` (stable `errorCode` + already-localized message
+  via `lang/{locale}/cart.php`), checked in this order: cart not empty →
+  per item (quantity 1-50, product exists/available, category active,
+  duplicate/invalid option values, each option group's effective min/max)
+  → delivery zone → combined restaurant+zone minimum order → coupon
+  (exists/active, date range, global usage limit, per-user limit, its own
+  minimum order) → tax (on `subtotal - discount`, gated by
+  `is_tax_enabled`).
+- **A real bug found and fixed**: `RestaurantSetting::current()` only set
+  `restaurant_name` when lazily creating the singleton row, trusting the
+  migration's column defaults for the rest. Eloquent doesn't re-read
+  DB-applied defaults back into the in-memory model after `insert()`, so a
+  freshly created row's `currency_code` (and everything else) came back
+  `null` in PHP despite being correct in the actual database row — this
+  broke `CartPricingResultData`'s non-nullable `currencyCode` on first use
+  in a fresh test database. Fixed by spelling out every default explicitly
+  in `current()`. Not caught by manual MySQL testing earlier (that database
+  had already been seeded, so the "truly first" lazy-create path was never
+  exercised) — only surfaced once a real `RefreshDatabase` test hit it.
+- **A real bug found and fixed in the *previous* task's seed data**:
+  `ProductSeeder` marked every attached option group `is_required = true`
+  uniformly, including multi-select "Extras"/"Sauces" groups — meaning the
+  seeded burgers/pizzas demanded a topping selection just to be priced,
+  which is wrong (toppings are optional add-ons). Fixed to derive
+  `is_required` from the group's `selection_type` (single-select forces a
+  choice, multi-select doesn't). Caught by actually pricing a seeded
+  product via `tinker`, not by re-reading the seeder.
+  `DatabaseSeederTest`'s existing assertions didn't catch this because they
+  never exercised option-group requiredness, only that the data existed.
+- **Tests**: `tests/Feature/Services/CartPricingServiceTest.php`, **38
+  tests** — placed under `tests/Feature`, not `tests/Unit`, per this
+  project's own `docs/TESTING.md` rule that anything touching the database
+  is a Feature test (the service always hits the database; that's the
+  point). Covers every explicitly requested case (plain product, product
+  with options, missing required option, valid coupon, expired coupon,
+  minimum not met, invalid delivery zone, unavailable product, immunity to
+  client-supplied prices) plus: inactive category, nonexistent
+  product/coupon/zone, duplicate option selection, exceeding a group's max
+  selection, inactive option value, quantity bounds, coupon not-yet-started,
+  inactive coupon, coupon global/per-user usage limits, percentage discount
+  capping, fixed discount never exceeding the subtotal, tax on/off, tax
+  computed on the discounted amount, delivery fee zero for pickup vs. the
+  zone's fee for delivery, determinism (same input twice → identical
+  result), and every money field being `int`.
+  Ran the suite 5x in a row to confirm no flakiness (an early version had a
+  flaky test from an unset factory-random `min_order_amount` — fixed by
+  pinning it explicitly wherever the test wasn't about minimums).
+- Full backend suite: **97 tests / 304 assertions**, Pint clean, verified
+  against the real local MySQL `Talabna` database too (migrations,
+  re-seed, live pricing calls via `tinker` for the happy path, coupon,
+  tax, and every explicit error case before the automated tests were even
+  written).
+
+## Realistic local dev seed data (previous task)
 
 Expanded the schema-only seeders from the previous task into full demo data,
 still `restaurant-backend` only. Full detail (what's seeded, demo login
@@ -380,15 +460,20 @@ see "Decisions & assumptions" above.)
 
 ## Next likely tasks (not started)
 
-- Build the first real API endpoints (menu browsing, checkout/place-order,
-  order status) following `docs/API_CONVENTIONS.md` and
-  `docs/DATABASE_SCHEMA.md` — Form Requests, Policies, Services/Actions for
-  order total calculation and coupon validation, API Resources.
+- Build a checkout/place-order Action that calls
+  `App\Services\CartPricingService::price()`, then actually persists the
+  `Order`/`OrderItem`/`OrderItemOption`/`OrderStatusHistory`/`CouponUsage`
+  rows from its result inside a DB transaction (the pricing service
+  deliberately never persists anything — see `docs/DATABASE_SCHEMA.md`
+  "Cart pricing"). Needs `orders.tax_amount` added at that point too.
+- Build the first real API endpoints (menu browsing, cart pricing preview,
+  checkout, order status) following `docs/API_CONVENTIONS.md` — Form
+  Requests, Policies, API Resources around the Action above.
 - Wire an actual HTTP client/service in `restaurant-customer-app` that reads
   `RESTAURANT_BACKEND_URL` and calls the backend API.
 - Decide and implement the real `NATIVEPHP_APP_ID` reverse-DNS identifier.
 - Install `php8.4-sqlite3` on this host (requires sudo) if the team wants to
   standardize on PHP 8.4.
-- Filament Resources for the new models (currently there's a schema/API
+- Filament Resources for the new models (currently there's a schema/domain
   layer but no admin UI yet to manage products/categories/orders through
   `/admin`).

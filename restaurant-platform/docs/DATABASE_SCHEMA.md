@@ -74,6 +74,20 @@ always read/write it through `RestaurantSetting::current()`, which
 `firstOrCreate`s the row with `id = 1`. Don't query the table directly or
 create a second row.
 
+`current()` spells out every default explicitly in the `firstOrCreate` call
+rather than leaning on the migration's column defaults — Eloquent doesn't
+re-read DB-applied defaults back into the in-memory model after an insert,
+so a freshly created row's `currency_code`/`min_order_amount`/etc. would
+otherwise sit `null` in PHP until the next full reload even though the
+database itself has the right value. This was a real bug caught by
+`CartPricingServiceTest`, not a hypothetical.
+
+`is_tax_enabled` (boolean, default `false`) and `tax_rate_bps` (basis
+points, e.g. `1500` = 15.00%, default `0`) were added for
+`App\Services\CartPricingService` — basis points rather than a whole
+percent or a decimal column, so the rate itself never needs a float any
+more than a money amount does.
+
 ### `business_hours`
 
 One row per weekday (`day_of_week`: 0 = Sunday .. 6 = Saturday, matching
@@ -108,12 +122,27 @@ Whether a group is *required* for a given product is deliberately **not**
 stored on `option_groups` itself — the same "Size" group might be required
 for a pizza but make no sense at all for a canned drink. Instead,
 `product_option_groups` is a real Eloquent pivot model (not a bare array
-pivot) carrying `is_required` and `sort_order` per product/group pairing:
+pivot) carrying `is_required`, `min_select`, `max_select`, and `sort_order`
+per product/group pairing:
 
 ```php
 $product->optionGroups()   // BelongsToMany, ->using(ProductOptionGroup::class)
-    ->withPivot(['is_required', 'sort_order']);
+    ->withPivot(['is_required', 'min_select', 'max_select', 'sort_order']);
 ```
+
+`min_select`/`max_select` are nullable **overrides** added when
+`App\Services\CartPricingService` needed real min/max selection-count
+validation, not just a single/multiple + required approximation. When
+either is `null` (true for every row seeded before this existed — no
+backfill needed), the service falls back to:
+
+- `min_select ?? ($is_required ? 1 : 0)`
+- `max_select ?? ($group->selection_type === Single ? 1 : unlimited)`
+
+So a required single-select group still means "exactly 1" and an optional
+multi-select group still means "0 or more" without every existing pivot row
+needing an explicit value — only a product that genuinely needs, say, "pick
+2 to 4 toppings" needs to set these explicitly.
 
 Both `option_groups` and `option_values` are soft-deletable — a discontinued
 topping doesn't need to disappear from historical orders (again: snapshots).
@@ -174,8 +203,10 @@ No soft deletes (financial/transactional — never deleted). Key columns:
   strings (see table above).
 - `subtotal_amount`, `discount_amount`, `delivery_fee_amount`,
   `total_amount`: integers, `total_amount = subtotal - discount + delivery_fee`.
-  No tax field — not part of the brief; add one later (`RestaurantSetting`
-  is the natural home for a tax rate) if/when it's actually needed.
+  No `tax_amount` column here yet — `App\Services\CartPricingService`
+  computes tax (see "Cart pricing" below) but nothing persists an `Order`
+  yet at all (deliberately out of scope so far); add `tax_amount` to this
+  table in the same task that finally builds checkout/order creation.
 - `coupon_id`, `delivery_zone_id`, `customer_address_id`: nullable,
   `nullOnDelete()` — an order keeps its own snapshot data regardless of
   whether these referenced rows still exist.
@@ -276,6 +307,57 @@ Naive circular zones: `latitude`/`longitude` center point +
 polygon geofencing. `delivery_fee_amount` and optional zone-specific
 `min_order_amount` can override `restaurant_settings`' defaults. Soft-deletable.
 
+## Cart pricing (domain layer, not a table)
+
+`App\Services\CartPricingService::price()` is the single place that turns a
+cart (product IDs, quantities, selected option value IDs, delivery
+type/zone, an optional coupon code) into real amounts. It doesn't persist
+anything — no `Order` is created here, this is pure calculation — but it's
+documented here because it's the thing that actually *uses* most of the
+schema above together.
+
+- **Input**: `App\DataTransferObjects\Cart\CartPricingRequestData` /
+  `CartItemInputData`. Neither carries a price field anywhere — the only
+  things a caller can specify are IDs and a quantity. Every amount in the
+  result comes from a fresh database lookup at call time
+  (`Product::price_amount`, `OptionValue::price_delta_amount`,
+  `DeliveryZone::delivery_fee_amount`, `Coupon`, `RestaurantSetting`), so a
+  tampered client request has no channel to influence the total at all —
+  this isn't a runtime check to bypass, it's structurally impossible given
+  the DTO's shape.
+- **Output**: `App\DataTransferObjects\Cart\CartPricingResultData`, with a
+  `CartPricedItemData`/`CartPricedOptionData` per line — the same shape
+  `order_items`/`order_item_options` would snapshot if this cart became a
+  real order (see "Snapshotting" above). `itemsSubtotalAmount` matches what
+  `orders.subtotal_amount` means; `optionsTotalAmount` is an additional
+  transparency breakdown (how much of the subtotal came from add-ons), not
+  a separate amount added on top.
+- **Errors**: `App\Exceptions\CartPricingException`, translated at throw
+  time via `lang/{locale}/cart.php` — `$exception->errorCode` gives calling
+  code (a future controller) a stable value to branch on, while
+  `$exception->getMessage()` is already localized for display. Validation
+  is fail-fast (first violation wins), in this order: cart not empty → per
+  item (quantity bounds, product exists/available, category active,
+  duplicate/invalid option values, each attached option group's effective
+  min/max selection count) → delivery zone resolution → the combined
+  restaurant/zone minimum order check → coupon (exists/active, date range,
+  global usage limit, per-user limit, its own minimum order) → tax.
+- **Money math**: every amount is computed and returned as `int`. Discounts
+  and tax involve a division (percentage/basis-point math), which is
+  unavoidably a `float` *intermediate* in PHP — but the result is always
+  `(int) round(...)` before it's stored in a DTO field or compared against
+  anything, so no float ever crosses a method boundary or gets persisted.
+  Tax is computed on `subtotal - discount` (goods, not delivery), gated by
+  `RestaurantSetting::is_tax_enabled`.
+- **A bug this caught**: `RestaurantSetting::current()` used to only set
+  `restaurant_name` when lazily creating the singleton row, relying on the
+  migration's column defaults for everything else. Eloquent doesn't re-read
+  DB-applied defaults into the in-memory model after an `insert`, so
+  `currency_code` (and every other default) came back `null` in PHP on a
+  freshly created row despite being correct in the database. Fixed by
+  spelling out every default explicitly in `current()`'s `firstOrCreate`
+  call. Caught by `CartPricingServiceTest`, not by inspection.
+
 ## Notifications
 
 ### `device_tokens`
@@ -298,12 +380,16 @@ were added for the columns actually used to search/filter, per the brief:
 
 ## What's deliberately not here
 
-- No tax/VAT fields — not requested; add via `RestaurantSetting` +
-  `orders.tax_amount` when actually needed.
-- No API endpoints, Form Requests, Policies, or checkout business logic —
-  this task was schema/models/factories/seeders only. See
-  `docs/API_CONVENTIONS.md` for the rules those will follow, and
-  `docs/PROJECT_STATE.md` for what's next.
-- Coupon validation logic (limits, min order, expiry) and order total
-  computation are application-layer concerns (a future
-  Service/Action), not something the schema enforces by itself.
+- `RestaurantSetting` now has `is_tax_enabled`/`tax_rate_bps` and cart
+  pricing computes tax, but `orders.tax_amount` doesn't exist yet — nothing
+  persists an `Order` at all so far (see "Cart pricing" above).
+- No API endpoints, Form Requests, Policies, or checkout/order-creation
+  business logic yet. `App\Services\CartPricingService` covers pricing and
+  validation only — it never creates an `Order`. See
+  `docs/API_CONVENTIONS.md` for the rules the eventual endpoints will
+  follow, and `docs/PROJECT_STATE.md` for what's next.
+- Coupon *redemption* (incrementing usage via a `CouponUsage` row) is not
+  done by the pricing service — it only *checks* limits, it doesn't consume
+  one, since pricing a cart (e.g. a live preview) must not have side
+  effects. Recording a `CouponUsage` belongs to whatever Action eventually
+  creates the `Order`.
