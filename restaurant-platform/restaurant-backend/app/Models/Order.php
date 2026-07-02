@@ -8,13 +8,13 @@ use App\Enums\DeliveryType;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Services\OrderNumberGenerator;
 use Database\Factories\OrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\DB;
 
 /**
  * No soft deletes: orders are financial/transactional records and are
@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\DB;
  */
 #[Fillable([
     'order_number',
+    'idempotency_key',
     'user_id',
     'status',
     'delivery_type',
@@ -50,10 +51,15 @@ class Order extends Model
     /** @use HasFactory<OrderFactory> */
     use HasFactory;
 
+    /**
+     * order_number is generated here (via the container-resolved
+     * OrderNumberGenerator, not a static call) so any code path that
+     * creates an Order gets one automatically if it isn't already set.
+     */
     protected static function booted(): void
     {
         static::creating(function (self $order): void {
-            $order->order_number ??= static::generateOrderNumber();
+            $order->order_number ??= app(OrderNumberGenerator::class)->generate();
         });
     }
 
@@ -72,26 +78,6 @@ class Order extends Model
             'delivery_longitude' => 'decimal:7',
             'expected_delivery_at' => 'datetime',
         ];
-    }
-
-    /**
-     * Atomically reserve the next "ORD-{year}-{000001}" number, guaranteeing
-     * uniqueness even under concurrent order creation via a row lock on the
-     * per-year counter (see order_number_sequences / OrderNumberSequence).
-     */
-    public static function generateOrderNumber(): string
-    {
-        return DB::transaction(function (): string {
-            $year = (int) now()->year;
-
-            $sequence = OrderNumberSequence::query()
-                ->lockForUpdate()
-                ->firstOrCreate(['year' => $year]);
-
-            $sequence->increment('last_number');
-
-            return sprintf('ORD-%d-%06d', $year, $sequence->last_number);
-        });
     }
 
     public function user(): BelongsTo

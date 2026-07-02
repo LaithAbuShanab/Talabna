@@ -26,6 +26,9 @@ class RestaurantSettingFactory extends Factory
             'min_order_amount' => fake()->numberBetween(0, 2000),
             'default_preparation_minutes' => fake()->numberBetween(10, 45),
             'is_accepting_orders' => true,
+            'allows_scheduled_orders' => false,
+            'is_tax_enabled' => false,
+            'tax_rate_bps' => 0,
         ];
     }
 }

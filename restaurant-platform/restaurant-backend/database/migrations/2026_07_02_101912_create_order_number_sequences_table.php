@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Internal counter backing Order::generateOrderNumber(): one row per
+     * Internal counter backing App\Services\OrderNumberGenerator: one row per
      * year, incremented atomically under a row lock so "ORD-2026-000001"
      * style numbers are gapless-per-request and guaranteed unique even
      * under concurrent order creation. Not a customer-facing entity.

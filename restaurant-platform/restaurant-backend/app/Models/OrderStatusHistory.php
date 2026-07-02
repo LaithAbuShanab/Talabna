@@ -18,7 +18,7 @@ use LogicException;
  * convention) — see docs/DATABASE_SCHEMA.md. No updated_at column exists
  * on purpose.
  */
-#[Fillable(['order_id', 'status', 'note', 'changed_by_user_id'])]
+#[Fillable(['order_id', 'from_status', 'status', 'note', 'metadata', 'changed_by_user_id'])]
 class OrderStatusHistory extends Model
 {
     /** @use HasFactory<OrderStatusHistoryFactory> */
@@ -40,7 +40,9 @@ class OrderStatusHistory extends Model
     protected function casts(): array
     {
         return [
+            'from_status' => OrderStatus::class,
             'status' => OrderStatus::class,
+            'metadata' => 'array',
             'created_at' => 'datetime',
         ];
     }

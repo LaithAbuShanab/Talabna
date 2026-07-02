@@ -57,9 +57,9 @@ final class CartPricingService
 
         $this->assertMinimumOrderMet($itemsSubtotal, $settings, $deliveryZone);
 
-        [$discount, $appliedCouponCode] = $request->couponCode !== null
+        [$discount, $appliedCouponId, $appliedCouponCode] = $request->couponCode !== null
             ? $this->applyCoupon($request->couponCode, $request->userId, $itemsSubtotal)
-            : [0, null];
+            : [0, null, null];
 
         $taxableAmount = $itemsSubtotal - $discount;
         $taxAmount = $settings->is_tax_enabled
@@ -73,6 +73,7 @@ final class CartPricingService
             currencyCode: $settings->currency_code,
             itemsSubtotalAmount: $itemsSubtotal,
             optionsTotalAmount: $optionsTotal,
+            appliedCouponId: $appliedCouponId,
             appliedCouponCode: $appliedCouponCode,
             discountAmount: $discount,
             deliveryType: $request->deliveryType,
@@ -245,7 +246,7 @@ final class CartPricingService
     }
 
     /**
-     * @return array{0: int, 1: string}
+     * @return array{0: int, 1: int, 2: string}
      */
     private function applyCoupon(string $couponCode, ?int $userId, int $itemsSubtotal): array
     {
@@ -295,6 +296,6 @@ final class CartPricingService
 
         $discount = min($discount, $itemsSubtotal);
 
-        return [$discount, $coupon->code];
+        return [$discount, $coupon->id, $coupon->code];
     }
 }

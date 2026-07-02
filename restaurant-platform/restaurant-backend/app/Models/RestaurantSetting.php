@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
     'min_order_amount',
     'default_preparation_minutes',
     'is_accepting_orders',
+    'allows_scheduled_orders',
     'is_tax_enabled',
     'tax_rate_bps',
 ])]
@@ -43,6 +44,7 @@ class RestaurantSetting extends Model
             'min_order_amount' => 'integer',
             'default_preparation_minutes' => 'integer',
             'is_accepting_orders' => 'boolean',
+            'allows_scheduled_orders' => 'boolean',
             'is_tax_enabled' => 'boolean',
             'tax_rate_bps' => 'integer',
         ];
@@ -65,6 +67,7 @@ class RestaurantSetting extends Model
                 'default_delivery_fee_amount' => 0,
                 'min_order_amount' => 0,
                 'is_accepting_orders' => true,
+                'allows_scheduled_orders' => false,
                 'is_tax_enabled' => false,
                 'tax_rate_bps' => 0,
             ],

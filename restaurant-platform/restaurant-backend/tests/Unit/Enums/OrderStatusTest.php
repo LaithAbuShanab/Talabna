@@ -28,10 +28,23 @@ class OrderStatusTest extends TestCase
         $this->assertTrue(OrderStatus::Ready->canTransitionTo(OrderStatus::Delivered));
     }
 
-    public function test_out_for_delivery_cannot_be_cancelled(): void
+    public function test_out_for_delivery_can_be_cancelled_structurally(): void
     {
-        $this->assertFalse(OrderStatus::OutForDelivery->canTransitionTo(OrderStatus::Cancelled));
+        // Structurally allowed by the graph; App\Services\OrderStatusTransitionService
+        // additionally requires the "very special permission" gate before
+        // actually allowing this one — see docs/ORDER_LIFECYCLE.md.
+        $this->assertTrue(OrderStatus::OutForDelivery->canTransitionTo(OrderStatus::Cancelled));
         $this->assertTrue(OrderStatus::OutForDelivery->canTransitionTo(OrderStatus::Delivered));
+    }
+
+    public function test_customer_cancellable_window(): void
+    {
+        $this->assertTrue(OrderStatus::Pending->isCustomerCancellable());
+        $this->assertTrue(OrderStatus::Accepted->isCustomerCancellable());
+        $this->assertFalse(OrderStatus::Preparing->isCustomerCancellable());
+        $this->assertFalse(OrderStatus::Ready->isCustomerCancellable());
+        $this->assertFalse(OrderStatus::OutForDelivery->isCustomerCancellable());
+        $this->assertFalse(OrderStatus::Delivered->isCustomerCancellable());
     }
 
     /**

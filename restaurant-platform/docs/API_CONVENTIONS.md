@@ -95,6 +95,14 @@ stays consistent.
   record runs inside a **database transaction**.
 - Status fields (order status, payment status, delivery type, etc.) are typed
   **PHP Enums**, never raw strings/integers compared by magic values.
+- Concrete examples to follow when the checkout endpoint is finally built:
+  `App\Services\CartPricingService` (pricing/validation, no persistence) and
+  `App\Actions\CreateOrderAction` (persists inside one transaction, dispatches
+  `App\Events\OrderCreated` only after commit, returns an `Order` ready for
+  `App\Http\Resources\OrderResource`) — see docs/DATABASE_SCHEMA.md
+  "Cart pricing" and "Order creation". Neither is wired to a route yet; a
+  controller will validate the request into `CreateOrderData`, call the
+  Action, and wrap the result in `ApiResponse::success(new OrderResource($order))`.
 
 ## Money and dates
 

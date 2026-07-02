@@ -2,9 +2,179 @@
 
 Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
-realistic local dev/demo seed data, then the cart-pricing domain layer.
+realistic local dev/demo seed data, the cart-pricing domain layer, the
+order-creation use case (checkout), then the centralized order status
+transition system.
 
-## Cart pricing domain layer (this task)
+## Order status transition system (this task)
+
+`restaurant-backend` only. Full detail — the complete lifecycle graph, who
+can do what, and every rule enforced — is in the new
+**`docs/ORDER_LIFECYCLE.md`**; this section is a pointer/summary plus a real
+gap this task fixed in earlier work.
+
+- **New**: `App\Services\OrderStatusTransitionService` (the single place
+  `orders.status` is ever changed after creation),
+  `App\DataTransferObjects\Order\TransitionOrderStatusData`,
+  `App\Policies\OrderPolicy` (four named abilities: `cancelAsCustomer`,
+  `manage`, `cancelAtReadyStage`, `cancelAtOutForDeliveryStage` — kept
+  separate even though the latter three currently all just check
+  `role === admin`, so tightening any one later is a one-method change),
+  `App\Exceptions\OrderStatusTransitionException` (new keys added to the
+  existing `lang/{en,ar}/order.php`, not a new lang file),
+  `App\Events\OrderStatusChanged` +
+  `App\Listeners\SendOrderStatusChangedNotification` (queued, reuses the
+  same `App\Contracts\PushNotifier` seam from order creation).
+- **A real gap in earlier work, found while re-deriving the transition
+  matrix from this task's spec**: `OrderStatus`'s transition graph
+  (written during the schema task) disallowed `out_for_delivery → cancelled`
+  entirely. This task's spec explicitly requires that transition to be
+  *allowed*, just gated behind "very special permission" — a fine
+  distinction the original enum design collapsed into "not allowed at all."
+  Fixed by adding the edge to `OrderStatus::transitionMap()` and updating
+  the one existing test that had asserted the old (wrong) behavior
+  (`OrderStatusTest::test_out_for_delivery_cannot_be_cancelled`, renamed and
+  corrected).
+- **Schema additions**: `order_status_histories.from_status` (nullable —
+  explicit old-status-per-row, rather than only implying it from the
+  previous row) and `.metadata` (nullable JSON, optional free-form
+  context) — both directly required by this task's "record the old status
+  / optional metadata" requirements, which the original append-only history
+  table didn't carry.
+- **Enforcement, in order**: row lock (re-fetch with `lockForUpdate()`
+  inside `DB::transaction()`, so validation always sees the current DB
+  state, never a stale in-memory `Order`) → terminal-state check → graph
+  check → pickup-only check (`ready → delivered` only for `delivery_type =
+  pickup`) → authorization (`OrderPolicy`) → required-reason check
+  (`rejected`/`cancelled`) → persist `Order` + one
+  `order_status_histories` row, all in the same transaction →
+  `OrderStatusChanged` dispatched only after the transaction returns
+  successfully.
+- **Customer surface is intentionally tiny**: a customer can only ever
+  cancel their *own* order, and only while it's `pending` or `accepted`
+  (`OrderStatus::isCustomerCancellable()`) — every forward transition
+  (accept/reject/prepare/ready/dispatch/deliver) is admin-only, verified by
+  a dedicated test per case, not just one generic "customers can't do
+  admin stuff" assertion.
+- **Tests**: `tests/Unit/Policies/OrderPolicyTest.php` (7 tests, genuinely
+  DB-free — `OrderPolicy` only reads attributes already on the in-memory
+  models it's given, so plain unsaved `new User()`/`new Order()` instances
+  are enough) and `tests/Feature/Services/OrderStatusTransitionServiceTest.php`
+  (46 tests): every one of the 12 allowed transitions, 13 structurally
+  invalid ones (data provider), all 3 terminal states rejecting any further
+  transition, the pickup-only rule, reason enforcement for both
+  reject/cancel, the full customer-authorization surface (including
+  same-order-different-user and post-preparing-window-closed cases), the
+  two special-permission gates independently proven via a `Mockery`-mocked
+  `OrderPolicy` (so the test verifies the *service* correctly consults the
+  gate, not just today's admin-only implementation of it), a `null` actor
+  bypassing authorization, estimated-preparation-minutes vs. an explicit
+  `expectedDeliveryAt` taking precedence, `from_status`/`metadata`/actor
+  recording, a stale-in-memory-copy test proving the row-lock re-fetch is
+  real (mutates the DB directly behind the service's back, confirms the
+  service still sees it), a transaction-rollback test (same
+  `ModelClass::creating()`-throws-and-`flushEventListeners()`-in-`finally`
+  technique as `CreateOrderActionTest`), and event dispatch only on
+  success.
+- Also updated the existing `tests/Unit/Enums/OrderStatusTest.php` for the
+  `out_for_delivery → cancelled` fix above, and added a test for the new
+  `isCustomerCancellable()` enum method.
+- Full backend suite: **172 tests / 437 assertions**, Pint clean, stable
+  across 3 repeated runs, verified against the real local MySQL `Talabna`
+  database too (fresh migrate+seed, then a full live walkthrough via
+  `tinker`: accept-with-estimated-time, unauthorized-customer rejection,
+  missing-reason rejection, terminal-state protection, the pickup-only
+  rule, the ready-stage special-permission cancellation, and the
+  customer-cancellation window opening/closing exactly at "preparing"
+  — all before a single automated test was written).
+
+## Order creation use case (previous task)
+
+## Order creation use case (this task)
+
+`restaurant-backend` only. Full detail is in the new "Order creation"
+section of **`docs/DATABASE_SCHEMA.md`** — this is a pointer/summary plus
+the real bugs this task caught.
+
+- **New**: `App\DataTransferObjects\Order\CreateOrderData`,
+  `App\Actions\CreateOrderAction`, `App\Services\OrderNumberGenerator`
+  (extracted out of `App\Models\Order`, which previously had the
+  order-number logic as a static method — now the model just calls
+  `app(OrderNumberGenerator::class)->generate()` from its `creating` event),
+  `App\Events\OrderCreated`, `App\Listeners\SendOrderCreatedNotification`
+  (queued), `App\Contracts\PushNotifier` + its default
+  `App\Notifications\Push\LogPushNotifier` implementation (bound in
+  `AppServiceProvider` — no real push provider exists yet, swapping one in
+  is a one-line binding change), `App\Exceptions\OrderCreationException` +
+  `lang/{en,ar}/order.php`, and `App\Http\Resources\{OrderResource,
+  OrderItemResource, OrderItemOptionResource, PaymentResource,
+  OrderStatusHistoryResource}`.
+- **Schema additions**: `orders.idempotency_key` (nullable,
+  `unique(user_id, idempotency_key)`) and
+  `restaurant_settings.allows_scheduled_orders` (schema readiness only —
+  see docs, scheduled ordering is explicitly not implemented).
+  `App\DataTransferObjects\Cart\CartPricingResultData` gained
+  `appliedCouponId` (alongside the existing `appliedCouponCode`) so
+  `CreateOrderAction` can record a `CouponUsage` without a redundant
+  re-query or a race window.
+- **`CreateOrderAction::execute()` flow**: idempotency check (return the
+  existing order unchanged if `(user_id, idempotency_key)` already exists,
+  including a fallback that catches `UniqueConstraintViolationException`
+  for the genuine-concurrent-request case) → restaurant open/closed check
+  (`RestaurantSetting.is_accepting_orders` + today's `business_hours`
+  row) → delivery address resolution (required + must belong to the
+  ordering user for `delivery`, ignored for `pickup`) →
+  `CartPricingService::price()` for every validation/amount → one DB
+  transaction creating `Order` → `OrderItem`/`OrderItemOption` → the first
+  `OrderStatusHistory` (`pending`) → `CouponUsage` if a coupon applied →
+  `Payment` (`pending`) → `OrderCreated` dispatched only after the
+  transaction returns successfully.
+- **Security property, by construction**: `CreateOrderData`/`CartItemInputData`
+  carry no price field anywhere — proven with a test that changes a
+  product's price mid-test and reorders, asserting the new price is what
+  gets stored.
+- **Two real bugs found and fixed while testing, not by inspection**:
+  1. A `*/` sequence *inside* a `/* ... */` doc comment
+     (`lang/{en,ar}/order.php`, written as "lang/\*/cart.php") prematurely
+     closed the comment block, turning the rest of the file into invalid
+     PHP — a `ParseError` that only surfaced the moment
+     `OrderCreationException` actually tried to translate a message (i.e.
+     the very first time any order-creation failure path was exercised).
+     Fixed by rewording to "lang/{locale}/cart.php". This is exactly the
+     kind of thing `php -l`/Pint don't catch on their own but a real test
+     invocation does.
+  2. That same bug briefly looked like a shell-quoting artifact during
+     manual `tinker` smoke-testing (the error message — "unexpected
+     identifier 'instead'" — reads like garbled shell escaping), which
+     delayed diagnosis. Root-caused by re-running through PHPUnit's
+     `--log-junit` output, which preserved the full exception stack trace
+     (`.../lang/ar/order.php:14`) instead of a summarized one-liner —
+     worth remembering next time a "syntax error" appears in a test result
+     that doesn't match anything in the file being tested: check what
+     `trans()`/`__()` calls might be loading elsewhere.
+- **Tests**: `tests/Feature/Actions/CreateOrderActionTest.php`, **21
+  tests** covering every explicitly requested case (delivery order, pickup
+  order, idempotency, restaurant closed, product became unavailable,
+  transaction failure, client prices rejected, status-history/payment
+  creation) plus: pickup never requiring an address, delivery rejecting a
+  missing or other-user's address, different idempotency keys creating
+  different orders, the same key being reusable across different users,
+  closure via business hours specifically (not just the
+  `is_accepting_orders` flag), an empty cart (delegated to
+  `CartPricingService`), snapshotting surviving a product rename mid-test,
+  coupon usage recording, `OrderCreated` dispatching only on success (and
+  specifically *not* dispatching on failure, via `Event::fake()`), and the
+  `OrderResource` JSON shape. The transaction-rollback test injects a
+  failure via a real `OrderItem::creating()` listener (not a mock) and
+  explicitly flushes it in a `finally` block so it can't leak into other
+  tests. Ran 3x in a row to confirm no flakiness.
+- Full backend suite: **118 tests / 365 assertions**, Pint clean, verified
+  end-to-end against the real local MySQL `Talabna` database too (a full
+  checkout with a coupon, a delivery zone, and a required product option,
+  computed correctly: 600+400 Large × 2 = 2000 subtotal, 200 discount via
+  `WELCOME10`, 300 delivery fee, 2100 total).
+
+## Cart pricing domain layer (previous task)
 
 `restaurant-backend` only. Full detail is in the new "Cart pricing" section
 of **`docs/DATABASE_SCHEMA.md`** — this is a pointer/summary plus the real
@@ -460,15 +630,22 @@ see "Decisions & assumptions" above.)
 
 ## Next likely tasks (not started)
 
-- Build a checkout/place-order Action that calls
-  `App\Services\CartPricingService::price()`, then actually persists the
-  `Order`/`OrderItem`/`OrderItemOption`/`OrderStatusHistory`/`CouponUsage`
-  rows from its result inside a DB transaction (the pricing service
-  deliberately never persists anything — see `docs/DATABASE_SCHEMA.md`
-  "Cart pricing"). Needs `orders.tax_amount` added at that point too.
 - Build the first real API endpoints (menu browsing, cart pricing preview,
-  checkout, order status) following `docs/API_CONVENTIONS.md` — Form
-  Requests, Policies, API Resources around the Action above.
+  checkout, order status/cancel) following `docs/API_CONVENTIONS.md` — Form
+  Requests around `CreateOrderData`/`TransitionOrderStatusData`, and
+  controllers that call `CreateOrderAction`/`OrderStatusTransitionService`
+  and wrap the result in `OrderResource` via `ApiResponse::success()`.
+  `CartPricingService`, `CreateOrderAction`, and
+  `OrderStatusTransitionService` are all fully built and tested — this is
+  "wire them to routes," not new business logic.
+- A Filament Resource/action for admins to move an order through the
+  lifecycle from `/admin` — `OrderStatusTransitionService` is ready to be
+  called from a Filament action button; nothing calls it from the admin
+  panel yet.
+- Add `orders.tax_amount` and have `CreateOrderAction` persist it once tax
+  needs to survive past the pricing-preview stage.
+- Refunds: `payments.status` already supports `refunded`/`partially_refunded`
+  but nothing sets them yet.
 - Wire an actual HTTP client/service in `restaurant-customer-app` that reads
   `RESTAURANT_BACKEND_URL` and calls the backend API.
 - Decide and implement the real `NATIVEPHP_APP_ID` reverse-DNS identifier.

@@ -7,7 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Internal counter used by Order::generateOrderNumber(). Not a
+ * Internal counter used by App\Services\OrderNumberGenerator. Not a
  * customer-facing entity — see docs/DATABASE_SCHEMA.md.
  */
 class OrderNumberSequence extends Model

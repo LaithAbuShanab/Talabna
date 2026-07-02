@@ -18,8 +18,10 @@ class OrderStatusHistoryFactory extends Factory
     {
         return [
             'order_id' => Order::factory(),
+            'from_status' => null,
             'status' => OrderStatus::Pending,
             'note' => fake()->optional()->sentence(),
+            'metadata' => null,
             'changed_by_user_id' => null,
         ];
     }

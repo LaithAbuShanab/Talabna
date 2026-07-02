@@ -22,6 +22,7 @@ final readonly class CartPricingResultData
         public string $currencyCode,
         public int $itemsSubtotalAmount,
         public int $optionsTotalAmount,
+        public ?int $appliedCouponId,
         public ?string $appliedCouponCode,
         public int $discountAmount,
         public DeliveryType $deliveryType,
