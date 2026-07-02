@@ -11,12 +11,12 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Events\OrderCreated;
 use App\Exceptions\OrderCreationException;
-use App\Models\BusinessHour;
 use App\Models\CouponUsage;
 use App\Models\CustomerAddress;
 use App\Models\Order;
 use App\Models\RestaurantSetting;
 use App\Services\CartPricingService;
+use App\Services\RestaurantAvailabilityService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -41,7 +41,10 @@ final class CreateOrderAction
         'deliveryZone',
     ];
 
-    public function __construct(private readonly CartPricingService $pricingService) {}
+    public function __construct(
+        private readonly CartPricingService $pricingService,
+        private readonly RestaurantAvailabilityService $availabilityService,
+    ) {}
 
     public function execute(CreateOrderData $data): Order
     {
@@ -53,7 +56,7 @@ final class CreateOrderAction
 
         $settings = RestaurantSetting::current();
 
-        if (! $this->isRestaurantOpen($settings)) {
+        if (! $this->availabilityService->isOpenNow($settings)) {
             throw new OrderCreationException('restaurant_closed');
         }
 
@@ -165,28 +168,6 @@ final class CreateOrderAction
             ->where('idempotency_key', $data->idempotencyKey)
             ->with(self::ORDER_RELATIONS)
             ->first();
-    }
-
-    private function isRestaurantOpen(RestaurantSetting $settings): bool
-    {
-        if (! $settings->is_accepting_orders) {
-            return false;
-        }
-
-        $now = now();
-        $businessHour = BusinessHour::query()->where('day_of_week', $now->dayOfWeek)->first();
-
-        if (! $businessHour instanceof BusinessHour || $businessHour->is_closed) {
-            return false;
-        }
-
-        if ($businessHour->opens_at === null || $businessHour->closes_at === null) {
-            return false;
-        }
-
-        $currentTime = $now->format('H:i:s');
-
-        return $currentTime >= $businessHour->opens_at && $currentTime <= $businessHour->closes_at;
     }
 
     private function resolveDeliveryAddress(CreateOrderData $data): ?CustomerAddress

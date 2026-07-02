@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['category_id', 'name', 'slug', 'description', 'price_amount', 'is_available', 'sort_order'])]
+#[Fillable(['category_id', 'name', 'name_ar', 'slug', 'description', 'description_ar', 'price_amount', 'is_available', 'sort_order'])]
 class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['name', 'selection_type', 'sort_order'])]
+#[Fillable(['name', 'name_ar', 'selection_type', 'sort_order'])]
 class OptionGroup extends Model
 {
     /** @use HasFactory<OptionGroupFactory> */

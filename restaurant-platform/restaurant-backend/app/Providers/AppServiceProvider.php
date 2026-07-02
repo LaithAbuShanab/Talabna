@@ -5,7 +5,16 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Contracts\PushNotifier;
+use App\Models\BusinessHour;
+use App\Models\Category;
+use App\Models\DeliveryZone;
+use App\Models\OptionGroup;
+use App\Models\OptionValue;
+use App\Models\Product;
+use App\Models\ProductOptionGroup;
+use App\Models\RestaurantSetting;
 use App\Notifications\Push\LogPushNotifier;
+use App\Observers\MenuCacheObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -43,5 +52,17 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(3)->by($key);
         });
+
+        // Invalidates App\Services\MenuCacheService whenever any menu-related
+        // model is saved/deleted, regardless of what triggered it (Filament,
+        // tinker, a seeder) — see App\Observers\MenuCacheObserver.
+        Category::observe(MenuCacheObserver::class);
+        Product::observe(MenuCacheObserver::class);
+        OptionGroup::observe(MenuCacheObserver::class);
+        OptionValue::observe(MenuCacheObserver::class);
+        ProductOptionGroup::observe(MenuCacheObserver::class);
+        DeliveryZone::observe(MenuCacheObserver::class);
+        RestaurantSetting::observe(MenuCacheObserver::class);
+        BusinessHour::observe(MenuCacheObserver::class);
     }
 }

@@ -15,7 +15,11 @@ class DeliveryZoneFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->unique()->citySuffix().' Zone',
+            // Not a unique DB column — fake()->unique() on the very small
+            // citySuffix() pool exhausts after a few hundred factory calls
+            // across the whole suite, so a random number is combined in
+            // instead to stay collision-resistant without needing "unique".
+            'name' => fake()->citySuffix().' Zone #'.fake()->numberBetween(1, 1000000),
             'delivery_fee_amount' => fake()->numberBetween(200, 1500),
             'min_order_amount' => fake()->optional()->numberBetween(500, 3000),
             'estimated_minutes' => fake()->numberBetween(15, 60),

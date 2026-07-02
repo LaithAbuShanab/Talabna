@@ -23,31 +23,31 @@ class ProductSeeder extends Seeder
     {
         $products = [
             'Burgers' => [
-                ['name' => 'Classic Beef Burger', 'price' => 450, 'options' => ['Bread Type', 'Extras', 'Sauces']],
-                ['name' => 'Chicken Burger', 'price' => 400, 'options' => ['Bread Type', 'Extras', 'Sauces']],
-                ['name' => 'Double Beef Burger', 'price' => 600, 'options' => ['Bread Type', 'Extras', 'Sauces']],
-                ['name' => 'Veggie Burger', 'price' => 380, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Classic Beef Burger', 'name_ar' => 'برجر لحم كلاسيكي', 'price' => 450, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Chicken Burger', 'name_ar' => 'برجر دجاج', 'price' => 400, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Double Beef Burger', 'name_ar' => 'برجر لحم مزدوج', 'price' => 600, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Veggie Burger', 'name_ar' => 'برجر خضار', 'price' => 380, 'options' => ['Bread Type', 'Extras', 'Sauces']],
             ],
             'Pizza' => [
-                ['name' => 'Margherita Pizza', 'price' => 600, 'options' => ['Size', 'Extras']],
-                ['name' => 'Pepperoni Pizza', 'price' => 700, 'options' => ['Size', 'Extras']],
-                ['name' => 'Vegetable Pizza', 'price' => 620, 'options' => ['Size', 'Extras']],
-                ['name' => 'BBQ Chicken Pizza', 'price' => 720, 'options' => ['Size', 'Extras']],
+                ['name' => 'Margherita Pizza', 'name_ar' => 'بيتزا مارغريتا', 'price' => 600, 'options' => ['Size', 'Extras']],
+                ['name' => 'Pepperoni Pizza', 'name_ar' => 'بيتزا ببيروني', 'price' => 700, 'options' => ['Size', 'Extras']],
+                ['name' => 'Vegetable Pizza', 'name_ar' => 'بيتزا خضار', 'price' => 620, 'options' => ['Size', 'Extras']],
+                ['name' => 'BBQ Chicken Pizza', 'name_ar' => 'بيتزا دجاج باربكيو', 'price' => 720, 'options' => ['Size', 'Extras']],
             ],
             'Sandwiches' => [
-                ['name' => 'Club Sandwich', 'price' => 350, 'options' => ['Bread Type', 'Sauces']],
-                ['name' => 'Grilled Cheese Sandwich', 'price' => 300, 'options' => ['Bread Type', 'Sauces']],
-                ['name' => 'Tuna Sandwich', 'price' => 370, 'options' => ['Bread Type', 'Sauces']],
+                ['name' => 'Club Sandwich', 'name_ar' => 'ساندويش كلوب', 'price' => 350, 'options' => ['Bread Type', 'Sauces']],
+                ['name' => 'Grilled Cheese Sandwich', 'name_ar' => 'ساندويش جبنة مشوية', 'price' => 300, 'options' => ['Bread Type', 'Sauces']],
+                ['name' => 'Tuna Sandwich', 'name_ar' => 'ساندويش تونة', 'price' => 370, 'options' => ['Bread Type', 'Sauces']],
             ],
             'Drinks' => [
-                ['name' => 'Soft Drink', 'price' => 100, 'options' => []],
-                ['name' => 'Fresh Orange Juice', 'price' => 200, 'options' => []],
-                ['name' => 'Iced Tea', 'price' => 150, 'options' => []],
-                ['name' => 'Bottled Water', 'price' => 50, 'options' => []],
+                ['name' => 'Soft Drink', 'name_ar' => 'مشروب غازي', 'price' => 100, 'options' => []],
+                ['name' => 'Fresh Orange Juice', 'name_ar' => 'عصير برتقال طازج', 'price' => 200, 'options' => []],
+                ['name' => 'Iced Tea', 'name_ar' => 'شاي مثلج', 'price' => 150, 'options' => []],
+                ['name' => 'Bottled Water', 'name_ar' => 'مياه معدنية', 'price' => 50, 'options' => []],
             ],
             'Desserts' => [
-                ['name' => 'Chocolate Cake', 'price' => 250, 'options' => []],
-                ['name' => 'Cheesecake', 'price' => 280, 'options' => []],
+                ['name' => 'Chocolate Cake', 'name_ar' => 'كيك شوكولاتة', 'price' => 250, 'options' => []],
+                ['name' => 'Cheesecake', 'name_ar' => 'تشيز كيك', 'price' => 280, 'options' => []],
             ],
         ];
 
@@ -63,6 +63,7 @@ class ProductSeeder extends Seeder
                     [
                         'category_id' => $category->id,
                         'name' => $item['name'],
+                        'name_ar' => $item['name_ar'],
                         'price_amount' => $item['price'],
                         'is_available' => true,
                         'sort_order' => $index,

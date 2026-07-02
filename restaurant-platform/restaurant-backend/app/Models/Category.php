@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['name', 'slug', 'description', 'image_path', 'sort_order', 'is_active'])]
+#[Fillable(['name', 'name_ar', 'slug', 'description', 'description_ar', 'image_path', 'sort_order', 'is_active'])]
 class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */

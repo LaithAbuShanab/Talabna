@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\CartPricingException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -54,6 +55,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 $e instanceof AuthorizationException => ApiResponse::error(
                     $e->getMessage() ?: 'This action is unauthorized.',
                     status: $e->status() ?: 403,
+                ),
+                $e instanceof CartPricingException => ApiResponse::error(
+                    $e->getMessage(),
+                    ['code' => $e->errorCode],
+                    422,
                 ),
                 $e instanceof ModelNotFoundException, $e instanceof NotFoundHttpException => ApiResponse::error(
                     'The requested resource was not found.',

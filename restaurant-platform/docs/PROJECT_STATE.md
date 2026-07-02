@@ -4,9 +4,114 @@ Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub pu
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
-transition system, then the versioned Sanctum-based auth/account API.
+transition system, the versioned Sanctum-based auth/account API, then the
+public menu/catalog API.
 
-## Versioned auth & account API (this task)
+## Public menu & catalog API (this task)
+
+`restaurant-backend` only. Full endpoint-by-endpoint detail is in the new
+**`docs/API_MENU.md`**; this section is a pointer/summary plus the real
+bugs this task caught (both cache-related, both only reproducible against
+the real `database` cache store — the test suite's `array` store masked
+them completely, see below).
+
+- **New public endpoints, all under `/api/v1`, no auth required**: `GET
+  restaurant` / `restaurant/hours` / `restaurant/is-open`, `GET
+  categories`, `GET products` (filters: `category_id`, `search` — doubles
+  as the "search products" endpoint — `page`, `per_page`), `GET
+  products/{id}`, `GET delivery-zones`, `POST delivery-zones/check` (by
+  `zone_id` or `latitude`/`longitude`, Haversine radius match), `POST
+  cart/preview` (also the "validate coupon" endpoint — pass `coupon_code`
+  in the same request).
+- **Bilingual content**: chose separate `name_ar`/`description_ar`
+  nullable columns (new migration) over converting `name`/`description`
+  to a JSON translations column, specifically so nothing outside this API
+  had to change — `CartPricingService`, `CreateOrderAction`, and the
+  order-snapshot columns all keep reading `name` as the same plain string
+  as before. Applies to `Category`/`Product` (name+description) and
+  `OptionGroup`/`OptionValue` (name only). API always returns
+  `{en, ar}`, falling back to English when no Arabic translation exists.
+  Seeders (`CategorySeeder`, `OptionSeeder`, `ProductSeeder`) updated with
+  real Arabic translations for all demo data, re-seeded against the local
+  MySQL database (idempotent `updateOrCreate`, so existing rows got the
+  translations without a fresh migrate).
+- **Prices**: every price everywhere in this API is
+  `{amount_minor, formatted, currency}` (`App\Support\Money`) — `formatted`
+  correctly divides by 3 decimals for JOD (this restaurant's currency),
+  not the more common 2, via a small ISO-4217-minor-unit lookup table.
+- **New**: `App\Services\MenuCacheService` (read-through cache, 1 hour
+  TTL), `App\Observers\MenuCacheObserver` (invalidates on
+  save/delete/restore of any of 8 menu-related models, registered in
+  `AppServiceProvider::boot()` — fires regardless of what triggers the
+  change, so it's already correct for whenever Filament Resources for
+  these models are eventually built, with zero further changes needed),
+  `App\Services\RestaurantAvailabilityService` (extracted out of
+  `CreateOrderAction`'s private `isRestaurantOpen()` so `is-open` and real
+  checkout can never drift apart — pure refactor, `CreateOrderActionTest`
+  unchanged and still passing), `App\Support\{Money, Geo}`, and the
+  `Menu`/`Cart` API Resource namespaces (`ProductListResource` vs.
+  `ProductDetailResource` deliberately separate — list excludes
+  description/options to keep the payload lean).
+- **`CartPricingException` wired into `bootstrap/app.php` for the first
+  time** (→ 422 with a stable `errors.code`): it existed since the
+  cart-pricing task but had never been reachable over HTTP before now (no
+  route threw it) — would have 500'd as a generic "Server Error." otherwise.
+- **Two real bugs found by live `curl` testing against the real MySQL +
+  `database`-cache-store environment, invisible to the test suite** (which
+  runs `CACHE_STORE=array`, an in-memory store that doesn't serialize
+  values at all, so neither bug could ever reproduce there):
+  1. Laravel's `database` cache store defaults `serializable_classes` to
+     `false` (a deliberate security hardening against PHP-object-injection
+     / gadget-chain attacks introduced in recent Laravel versions) —
+     unserializing any cached PHP *object* silently returns a useless
+     `__PHP_Incomplete_Class` instead of throwing. `MenuCacheService`
+     originally cached raw Eloquent models/Collections directly; every
+     cache *hit* (not the first, cache-populating request) broke
+     immediately (`GET /restaurant/is-open` was the first endpoint that
+     actually hit a warm cache during manual testing, since it reads the
+     same settings `GET /restaurant` had just cached). Rather than weaken
+     that security default, fixed by caching only plain arrays — flat
+     models (categories, delivery zones, business hours, restaurant
+     settings) via `->toArray()` + `Model::hydrate()`/`newFromBuilder()`
+     reconstruction; products (too deep a relation tree to reconstitute
+     cleanly) via caching the *already-resolved API Resource arrays*
+     directly instead.
+  2. Fixing bug 1 surfaced a second, subtler one: `JsonResource::resolve()`
+     only converts the *outer* resource to an array — a nested resource
+     returned as a plain array *value* (e.g. `ProductDetailResource`'s
+     `category` or `option_groups`) is left as a live, uncached-safe
+     Resource object. Invisible in a normal HTTP response because
+     `response()->json()` calls `json_encode()`, which recurses into every
+     `JsonSerializable` value it finds at any depth — but caching
+     `resolve()`'s output directly skips that recursion, so the exact same
+     `__PHP_Incomplete_Class` symptom reappeared one level deeper
+     (`GET /products/{id}`, cold *and* warm, both broken). Fixed with a
+     `deepResolve()` helper that forces the same recursive expansion via a
+     `json_encode()`/`json_decode()` round trip before caching.
+- **Tests**: `tests/Feature/Api/V1/Menu/{RestaurantTest, CategoryTest,
+  ProductTest, DeliveryZoneTest, CartPreviewTest, MenuCacheTest}` — every
+  filter/pagination/search case, the bilingual fallback-to-English
+  behavior, inactive-category/unavailable-product exclusion on both list
+  and detail, nested option groups/values (including an inactive value
+  correctly excluded), coupon validation (valid/invalid/expired) inside
+  cart preview, delivery-zone checks (by id and by coordinate, inside and
+  outside radius), all three independent `is-open` conditions, and —
+  explicitly, in `MenuCacheTest` — that editing each underlying model
+  immediately invalidates that endpoint's cache rather than serving stale
+  data. A pre-existing latent bug in `DeliveryZoneFactory` also surfaced
+  here purely from added test volume: `fake()->unique()->citySuffix()`'s
+  pool is small enough (`name` isn't even a unique DB column) that ~300
+  factory calls across the whole suite exhausted it
+  ("Maximum retries of 10000 reached"); fixed by dropping `unique()` in
+  favor of appending a random number.
+- Full backend suite: **249 tests / 671 assertions** (up from 206/537),
+  Pint clean, stable across 3 repeated runs, verified against the real
+  local MySQL `Talabna` database end-to-end — every endpoint live via
+  `curl` (including confirming a cache *hit* returns byte-identical data
+  to the cold read, and that editing a product/category/option value via
+  `tinker` is reflected on the very next request, not after a TTL wait).
+
+## Versioned auth & account API (previous task)
 
 `restaurant-backend` only. Full endpoint-by-endpoint detail (request/response
 shapes, rate limits, error codes) is in the new **`docs/API_AUTH.md`**; this

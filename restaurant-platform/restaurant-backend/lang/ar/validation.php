@@ -212,6 +212,17 @@ return [
         'latitude' => 'خط العرض',
         'longitude' => 'خط الطول',
         'is_default' => 'العنوان الافتراضي',
+        'zone_id' => 'منطقة التوصيل',
+        'category_id' => 'التصنيف',
+        'search' => 'بحث',
+        'per_page' => 'عدد العناصر في الصفحة',
+        'page' => 'الصفحة',
+        'items' => 'عناصر السلة',
+        'items.*.product_id' => 'المنتج',
+        'items.*.quantity' => 'الكمية',
+        'delivery_type' => 'نوع التوصيل',
+        'delivery_zone_id' => 'منطقة التوصيل',
+        'coupon_code' => 'رمز الكوبون',
     ],
 
 ];

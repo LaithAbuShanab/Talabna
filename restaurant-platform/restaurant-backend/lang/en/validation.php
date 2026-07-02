@@ -209,6 +209,17 @@ return [
         'latitude' => 'latitude',
         'longitude' => 'longitude',
         'is_default' => 'default address',
+        'zone_id' => 'delivery zone',
+        'category_id' => 'category',
+        'search' => 'search',
+        'per_page' => 'per page',
+        'page' => 'page',
+        'items' => 'cart items',
+        'items.*.product_id' => 'product',
+        'items.*.quantity' => 'quantity',
+        'delivery_type' => 'delivery type',
+        'delivery_zone_id' => 'delivery zone',
+        'coupon_code' => 'coupon code',
     ],
 
 ];

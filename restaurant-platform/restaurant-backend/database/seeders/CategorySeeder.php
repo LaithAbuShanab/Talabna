@@ -12,11 +12,20 @@ class CategorySeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (['Burgers', 'Pizza', 'Sandwiches', 'Drinks', 'Desserts'] as $index => $name) {
+        $names = [
+            'Burgers' => 'برجر',
+            'Pizza' => 'بيتزا',
+            'Sandwiches' => 'ساندويشات',
+            'Drinks' => 'مشروبات',
+            'Desserts' => 'حلويات',
+        ];
+
+        foreach (array_keys($names) as $index => $name) {
             Category::query()->updateOrCreate(
                 ['slug' => Str::slug($name)],
                 [
                     'name' => $name,
+                    'name_ar' => $names[$name],
                     'sort_order' => $index,
                     'is_active' => true,
                 ],
