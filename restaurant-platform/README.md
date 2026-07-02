@@ -12,8 +12,12 @@ projects:
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the two projects
 relate, [`docs/API_CONVENTIONS.md`](docs/API_CONVENTIONS.md) for API rules,
-and [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) for the current status
-of the codebase.
+[`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) for naming
+conventions, [`docs/TESTING.md`](docs/TESTING.md) for test conventions,
+[`docs/SECURITY.md`](docs/SECURITY.md) for the security posture,
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution workflow, and
+[`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) for the current status of
+the codebase.
 
 ## Requirements
 
@@ -33,10 +37,9 @@ cd restaurant-backend
 cp .env.example .env
 composer install
 php artisan key:generate
-touch database/database.sqlite
+touch database/database.sqlite   # skip this if you're using MySQL/PostgreSQL instead — see .env
 php artisan migrate
 php artisan make:filament-user   # create your first admin account
-composer run dev                 # serves the app + queue + Vite
 ```
 
 Admin panel: `http://localhost:8000/admin`
@@ -51,20 +54,35 @@ php artisan key:generate
 touch database/database.sqlite
 php artisan migrate
 npm install && npm run build
-composer run dev                 # serves the app + queue + Vite
 ```
 
 Set `RESTAURANT_BACKEND_URL` in `.env` to point at a running
 `restaurant-backend` instance before wiring up any API calls.
 
-To build/run the native Android/iOS shell (once native features are actually
-being added), see NativePHP's docs: `php artisan native:run`.
+## Common commands
 
-## Formatting & tests
+Run these from inside the project you're working on
+(`restaurant-backend/` or `restaurant-customer-app/`):
 
-Run these from inside each project directory after making changes:
+| Task | Command |
+|---|---|
+| Run tests | `php artisan test` (or `composer run test`, which also lints first) |
+| Run one test | `php artisan test --filter=TestClassOrMethodName` |
+| Format code (auto-fix) | `composer run lint` (or `php vendor/bin/pint`) |
+| Check formatting only (no changes, CI-style) | `composer run lint:check` |
+| Run migrations | `php artisan migrate` |
+| Roll back last migration batch | `php artisan migrate:rollback` |
+| Start the backend/app server | `php artisan serve` (defaults to `http://localhost:8000`) |
+| Start the queue worker | `php artisan queue:work` (or `queue:listen` while developing, so code changes are picked up without a restart) |
+| Start everything at once (server + queue + logs + Vite) | `composer run dev` |
 
-```bash
-php vendor/bin/pint      # code style
-php artisan test         # PHPUnit test suite
-```
+`restaurant-customer-app` only — NativePHP Mobile:
+
+| Task | Command |
+|---|---|
+| **NativePHP development run** — start a dev server + QR code so the app can be opened live on a phone/emulator, with hot reload | `php artisan native:jump` |
+| Build, package, and run the native Android/iOS shell (heavier: full build) | `php artisan native:run` |
+| Re-run the NativePHP install/scaffold step (already done once — only needed if `nativephp/` is deleted or reset) | `php artisan native:install` |
+
+See NativePHP's own docs for building signed release binaries — that's out
+of scope for local development.

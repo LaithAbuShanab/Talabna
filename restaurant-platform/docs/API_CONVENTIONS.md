@@ -1,9 +1,12 @@
 # API Conventions
 
 These conventions apply to every endpoint added to `restaurant-backend`'s REST
-API going forward. No restaurant-domain endpoints exist yet (this scaffolding
-task intentionally created none) — this document sets the ground rules before
-that work starts.
+API going forward. Two real endpoints exist as a working example of every rule
+below: `GET /api/health` and `GET /api/user`. No restaurant-domain endpoints
+exist yet — that's future, explicitly-scoped work. See also
+`docs/CODING_STANDARDS.md` (naming conventions), `docs/TESTING.md` (what to
+test and how), and `docs/SECURITY.md` (error handling, auth, input
+validation).
 
 ## Base URL & versioning
 
@@ -33,18 +36,56 @@ that work starts.
   expressed via the Form Request's `authorize()` method and/or a **Policy**,
   not ad-hoc checks scattered in controllers.
 
-## Responses
+## Responses: unified envelope
 
-- Every endpoint returns data through an **API Resource**
-  (`App\Http\Resources\...`), never raw Eloquent models or arrays built by
-  hand in the controller.
-- Standard success envelope: the resource's natural JSON shape, wrapped by
-  Laravel's default `data` key for single resources / resource collections.
-- Standard error shape: Laravel's default validation error / exception JSON
-  (`message`, `errors` for 422s). Do not invent a bespoke error envelope
-  without updating this document.
-- Paginated list endpoints use Laravel's standard paginator output (cursor or
-  length-aware, chosen per endpoint) — never return unbounded collections.
+Every `/api/*` response — success or error — uses the same envelope, built
+through `App\Http\Responses\ApiResponse` (`restaurant-backend/app/Http/Responses/ApiResponse.php`).
+Don't hand-build `response()->json([...])` in a controller; call
+`ApiResponse::success()` / `ApiResponse::error()` instead so every endpoint
+stays consistent.
+
+**Success** (`ApiResponse::success($data, $message, $status = 200)`):
+
+```json
+{
+  "success": true,
+  "message": "Optional message",
+  "data": {}
+}
+```
+
+**Error** (`ApiResponse::error($message, $errors, $status = 422)`):
+
+```json
+{
+  "success": false,
+  "message": "Human-readable message",
+  "errors": {}
+}
+```
+
+- `data`/`errors` default to `{}` (an empty object, not `null` or `[]`) when
+  there's nothing to include, so clients can rely on the key always being an
+  object-shaped value.
+- `data` is populated from an **API Resource** (`App\Http\Resources\...`) or
+  a resource collection — never a raw Eloquent model or a hand-built array of
+  model attributes.
+- **Exceptions are handled automatically**: `bootstrap/app.php`'s
+  `withExceptions()` renders every exception raised on an `api/*` route
+  through this same envelope — `ValidationException` → 422 with field errors
+  in `errors`, `AuthenticationException` → 401, `AuthorizationException` →
+  403, not-found (`ModelNotFoundException`/`NotFoundHttpException`) → 404,
+  any other `HttpExceptionInterface` → its own status code, anything else →
+  500 with a generic `"Server Error."` message (never the real exception
+  message or a stack trace outside local debug mode — see
+  `docs/SECURITY.md`). You don't need to catch these yourself in a
+  controller/Action just to format the error response.
+- Paginated list endpoints use Laravel's standard paginator, passed as `data`
+  through a resource collection — never return unbounded collections.
+- `GET /api/health` is the canonical example of the success shape end-to-end;
+  see `tests/Feature/Api/HealthEndpointTest.php` and
+  `tests/Feature/Api/ApiResponseFormatTest.php` for the tests that pin this
+  contract down.
 
 ## Business logic placement
 

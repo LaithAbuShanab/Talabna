@@ -1,6 +1,95 @@
 # Project State
 
-Last updated: 2026-07-02 — initial scaffolding task.
+Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
+then unified quality standards (Pint, unified API envelope, docs) across both projects.
+
+## Quality standards (this task)
+
+Applies to both projects unless noted. See `CONTRIBUTING.md`,
+`docs/CODING_STANDARDS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, and the
+"Responses: unified envelope" section of `docs/API_CONVENTIONS.md` for the
+full detail — this is a summary of what changed and why.
+
+- **Pint**: both projects now have an explicit `pint.json`
+  (`{"preset": "laravel", "rules": {"declare_strict_types": true}}`) —
+  `restaurant-backend` didn't have one before (it was relying on Pint's
+  implicit default). The `declare_strict_types` rule auto-added
+  `declare(strict_types=1);` to every existing PHP file in both projects
+  (config, routes, migrations, lang files, app code, tests) — verified both
+  full test suites still pass after this ran.
+- **Test framework**: unchanged — both projects keep **PHPUnit** (not Pest),
+  per the explicit instruction not to switch frameworks without a reason.
+- **Composer scripts for parity**: `restaurant-customer-app` (Livewire
+  starter kit) already had `lint`, `lint:check`, and a `test` script that
+  chains lint + Larastan (`types:check`) + `php artisan test`.
+  `restaurant-backend` didn't — added matching `lint`/`lint:check` scripts
+  and wired `lint:check` into its `test` script too, so `composer run test`
+  now means the same thing (lint + test) in both projects.
+- **Unified API envelope**: `App\Http\Responses\ApiResponse` (new,
+  `restaurant-backend/app/Http/Responses/ApiResponse.php`) is the only way
+  API responses should be built —
+  `success(data, message, status=200)` → `{success:true, message, data}`,
+  `error(message, errors, status=422)` → `{success:false, message, errors}`.
+  Wired into `bootstrap/app.php`'s `withExceptions()` so **every** exception
+  on an `api/*` route — validation, auth, authz, not-found, or anything
+  uncaught — renders through this same envelope automatically; controllers
+  don't need to catch these themselves.
+- **`GET /api/health`** (new, `routes/api.php`) is the first real endpoint
+  and doubles as the working example of the success envelope. `GET
+  /api/user` (Sanctum's scaffolded route) was updated to wrap its response
+  in `ApiResponse::success()` too, for consistency — still not going through
+  a full API Resource since it's Sanctum's utility route, not domain data.
+- **Real bug found and fixed**: unauthenticated requests to `/api/user`
+  **without** an `Accept: application/json` header (i.e. what `curl` sends by
+  default, and what a naive HTTP client might send) returned a **500**, not
+  401 — Laravel's `ApplicationBuilder` registers a default
+  `redirectGuestsTo(fn () => route('login'))`, and this backend has no `login`
+  route (Filament's admin auth is a separate guard/route), so resolving it
+  threw `RouteNotFoundException`. Fixed in `bootstrap/app.php`'s
+  `withMiddleware()`: `$middleware->redirectGuestsTo(fn () => null)`. Caught
+  by live `curl` testing, **not** by the initial PHPUnit tests — `getJson()`
+  sends `Accept: application/json` and so never hit the buggy path. Added
+  `test_unauthenticated_api_request_without_accept_header_still_returns_json_401`
+  (using plain `get()`, not `getJson()`) as a regression guard so this can't
+  silently come back.
+- **New tests**: `tests/Feature/Api/HealthEndpointTest.php` (health shape) and
+  `tests/Feature/Api/ApiResponseFormatTest.php` (401/404 unified error shape,
+  the Accept-header regression above, and a check that `trace`/`exception`/
+  `file`/`line` never appear in an API error response).
+- **`app/Concerns/ProfileValidationRules.php`** (customer-app, part of the
+  official Livewire starter kit, not something we wrote): fixed a pre-existing
+  PHPDoc return-type gap (`Illuminate\Validation\Rules\Unique` wasn't listed
+  in the union type) that made Larastan (`composer run test`'s `types:check`
+  step) fail on code we didn't touch otherwise. Docblock-only fix, no
+  behavior change — needed because our docs/README now tell people to rely on
+  `composer run test` passing.
+- New root docs: `CONTRIBUTING.md`, `docs/CODING_STANDARDS.md` (naming
+  conventions for Models/Services/Actions/DTOs/Enums/API Resources/Filament
+  Resources), `docs/TESTING.md`, `docs/SECURITY.md`. `README.md`'s command
+  reference expanded into an explicit table (tests, formatter, migrations,
+  server, queue worker, NativePHP dev run via `native:jump` vs. full
+  `native:run`).
+- Verified at the end: `composer run test` passes clean in both projects
+  (backend: 7 tests / 25 assertions + Pint clean; customer-app: 33 tests /
+  81 assertions + Pint clean + Larastan 0 errors), and live `curl` checks
+  against a running backend server confirm the envelope shape, the 401 fix,
+  and that no stack trace ever appears in an API error response.
+
+## Version control
+
+- Git repo root is `talabna-platform/` (one level above `restaurant-platform/`),
+  initialized fresh and pushed as the initial commit to
+  `https://github.com/LaithAbuShanab/Talabna.git` (branch `main`).
+- Verified before commit: only `.env.example` files are tracked (no real
+  `.env`), and `vendor/`, `node_modules/`, and `restaurant-customer-app/nativephp/`
+  (Android build output, ~72MB) are all excluded per the nested `.gitignore`
+  files. 243 files in the initial commit.
+- Pushed over HTTPS using a one-time Personal Access Token supplied directly
+  in the `git push`/`git fetch` command line — the token was never written to
+  `.git/config`, any repo file, or persisted anywhere. `git remote -v` shows
+  a plain tokenless URL. **Follow-up**: future pushes from this environment
+  will need credentials again (either add the environment's SSH public key at
+  github.com/settings/keys, or supply a fresh token) since none are stored.
 
 ## What exists
 
@@ -20,9 +109,19 @@ was intentionally out of scope for this task.
   (`app/Providers/Filament/AdminPanelProvider.php`). No `->registration()`
   call, so public self-registration is disabled (confirmed: `GET
   /admin/register` → 404).
-- `DB_CONNECTION=sqlite` in `.env` for local dev; `config/database.php` and
-  `.env(.example)` are already set up to switch to `mysql`/`pgsql` for
-  production (commented block with host/port/database/username/password).
+- **Local `.env` now uses MySQL, not SQLite**: `DB_CONNECTION=mysql`,
+  `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=Talabna`,
+  `DB_USERNAME=root`, `DB_PASSWORD=root`, pointing at a pre-existing local
+  `Talabna` database. Migrations re-run successfully against it (`users`,
+  `cache_*`, `jobs`, `job_batches`, `failed_jobs`, `sessions`,
+  `password_reset_tokens`, `personal_access_tokens`, `migrations` tables
+  created); `/admin/login` verified live over this connection.
+  `.env.example` intentionally still documents the SQLite-by-default /
+  MySQL-or-PostgreSQL-in-production pattern from `config/database.php` — only
+  this machine's real `.env` (git-ignored) was switched.
+- The test suite is unaffected by this: `phpunit.xml` forces
+  `DB_CONNECTION=sqlite` + `DB_DATABASE=:memory:` for all test runs regardless
+  of `.env`, so `php artisan test` still uses in-memory SQLite.
 - Locale defaults: `APP_LOCALE=ar`, `APP_FALLBACK_LOCALE=en`. Filament's
   admin panel automatically renders `lang="ar" dir="rtl"` and translated
   UI strings out of the box (verified via a live request to `/admin/login`).
