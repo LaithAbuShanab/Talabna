@@ -1,0 +1,19 @@
+# Each sub-project (restaurant-backend, restaurant-customer-app) has its own
+# .gitignore covering /vendor, /node_modules, .env, build output, etc.
+# This root file only covers things that could appear at the platform root.
+
+.DS_Store
+Thumbs.db
+*.log
+
+/.idea
+/.vscode
+/.fleet
+/.nova
+/.zed
+
+# Never commit real secrets; only *.env.example files are tracked.
+.env
+.env.*
+!.env.example
+!*/.env.example
