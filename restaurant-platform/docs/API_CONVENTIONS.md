@@ -1,22 +1,24 @@
 # API Conventions
 
 These conventions apply to every endpoint added to `restaurant-backend`'s REST
-API going forward. Two real endpoints exist as a working example of every rule
-below: `GET /api/health` and `GET /api/user`. No restaurant-domain endpoints
-exist yet — that's future, explicitly-scoped work. See also
-`docs/CODING_STANDARDS.md` (naming conventions), `docs/TESTING.md` (what to
-test and how), and `docs/SECURITY.md` (error handling, auth, input
-validation).
+API going forward. The full set of authentication/account endpoints
+(register, login, logout, profile, password reset, addresses) lives under
+`/api/v1` and is documented in **`docs/API_AUTH.md`** — that's the working
+example of every rule below. See also `docs/CODING_STANDARDS.md` (naming
+conventions), `docs/TESTING.md` (what to test and how), and `docs/SECURITY.md`
+(error handling, auth, input validation).
 
 ## Base URL & versioning
 
-- All API routes are registered in `restaurant-backend/routes/api.php` and are
-  served under `/api`.
+- All API routes are served under `/api/v1`. `restaurant-backend/routes/api.php`
+  is just a thin pointer (`Route::prefix('v1')->group(base_path('routes/api_v1.php'))`);
+  the actual route definitions live in `routes/api_v1.php`.
 - The customer app reaches the API only over HTTPS in any non-local
   environment; the base URL is configurable per environment
   (`RESTAURANT_BACKEND_URL` in `restaurant-customer-app/.env`).
-- Introduce a version prefix (e.g. `/api/v1/...`) before the first breaking
-  change is needed; until then, treat the unversioned API as `v1` implicitly.
+- When a breaking change is eventually needed, introduce `routes/api_v2.php`
+  the same way and prefix it with `/api/v2` — don't retrofit breaking changes
+  into `v1`.
 
 ## Authentication
 
@@ -26,6 +28,9 @@ validation).
 - Protected routes use the `auth:sanctum` middleware. Public endpoints (e.g.
   login, registration, public menu browsing if applicable) must be explicitly
   and deliberately marked as such — do not default new routes to public.
+- Tokens are named after the requesting device (`device_name`). See
+  `docs/API_AUTH.md` for the full endpoint list, rate limiting, and the
+  anti-enumeration rule for forgot-password.
 
 ## Request validation
 
@@ -82,8 +87,8 @@ stays consistent.
   controller/Action just to format the error response.
 - Paginated list endpoints use Laravel's standard paginator, passed as `data`
   through a resource collection — never return unbounded collections.
-- `GET /api/health` is the canonical example of the success shape end-to-end;
-  see `tests/Feature/Api/HealthEndpointTest.php` and
+- `GET /api/v1/health` is the canonical example of the success shape
+  end-to-end; see `tests/Feature/Api/HealthEndpointTest.php` and
   `tests/Feature/Api/ApiResponseFormatTest.php` for the tests that pin this
   contract down.
 

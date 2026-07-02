@@ -19,4 +19,11 @@ return [
     'password' => 'The provided password is incorrect.',
     'throttle' => 'Too many login attempts. Please try again in :seconds seconds.',
 
+    'registered' => 'Registration successful.',
+    'login_success' => 'Login successful.',
+    'logged_out' => 'Logged out successfully.',
+    'logged_out_all' => 'Logged out from all devices successfully.',
+    'profile_updated' => 'Profile updated successfully.',
+    'password_changed' => 'Password changed successfully.',
+
 ];

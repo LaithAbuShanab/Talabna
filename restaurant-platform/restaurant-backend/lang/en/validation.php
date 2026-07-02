@@ -197,6 +197,18 @@ return [
     |
     */
 
-    'attributes' => [],
+    'attributes' => [
+        'device_name' => 'device name',
+        'current_password' => 'current password',
+        'token' => 'reset token',
+        'address_line1' => 'address line 1',
+        'address_line2' => 'address line 2',
+        'city' => 'city',
+        'label' => 'label',
+        'notes' => 'notes',
+        'latitude' => 'latitude',
+        'longitude' => 'longitude',
+        'is_default' => 'default address',
+    ],
 
 ];

@@ -6,6 +6,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserRole;
+use App\Notifications\ApiResetPasswordNotification;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -61,5 +62,15 @@ class User extends Authenticatable implements FilamentUser
     public function deviceTokens(): HasMany
     {
         return $this->hasMany(DeviceToken::class);
+    }
+
+    /**
+     * Override the default web-URL reset email with an API-appropriate one
+     * that sends the raw token, since this backend has no reset-password
+     * web page for Laravel's default notification to link to.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ApiResetPasswordNotification($token));
     }
 }

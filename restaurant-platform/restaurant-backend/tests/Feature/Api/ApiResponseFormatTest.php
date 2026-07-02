@@ -10,7 +10,7 @@ class ApiResponseFormatTest extends TestCase
 {
     public function test_unauthenticated_api_request_returns_unified_error_envelope(): void
     {
-        $response = $this->getJson('/api/user');
+        $response = $this->getJson('/api/v1/user');
 
         $response->assertStatus(401)
             ->assertJson([
@@ -27,7 +27,7 @@ class ApiResponseFormatTest extends TestCase
         // to a "login" route that doesn't exist in this API-only backend,
         // producing a 500 instead of a clean 401. See bootstrap/app.php's
         // redirectGuestsTo(fn () => null).
-        $response = $this->get('/api/user');
+        $response = $this->get('/api/v1/user');
 
         $response->assertStatus(401)
             ->assertJson([

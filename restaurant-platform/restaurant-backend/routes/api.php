@@ -2,19 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Http\Responses\ApiResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/health', function () {
-    return ApiResponse::success([
-        'status' => 'ok',
-        'timestamp' => now()->toIso8601String(),
-    ], 'OK');
-});
-
-// Sanctum's scaffolded "who am I" route. Real domain endpoints must return
-// an API Resource through ApiResponse::success(), per docs/API_CONVENTIONS.md.
-Route::get('/user', function (Request $request) {
-    return ApiResponse::success($request->user());
-})->middleware('auth:sanctum');
+// All endpoints live under /api/v1 — see routes/api_v1.php and
+// docs/API_AUTH.md. Introduce routes/api_v2.php the same way if/when a
+// breaking change ever requires a new version.
+Route::prefix('v1')->group(base_path('routes/api_v1.php'));

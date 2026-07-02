@@ -3,10 +3,114 @@
 Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
-order-creation use case (checkout), then the centralized order status
-transition system.
+order-creation use case (checkout), the centralized order status
+transition system, then the versioned Sanctum-based auth/account API.
 
-## Order status transition system (this task)
+## Versioned auth & account API (this task)
+
+`restaurant-backend` only. Full endpoint-by-endpoint detail (request/response
+shapes, rate limits, error codes) is in the new **`docs/API_AUTH.md`**; this
+section is a pointer/summary plus the real bug this task caught.
+
+- **Real versioning introduced**: `routes/api.php` is now a thin
+  `Route::prefix('v1')->group(base_path('routes/api_v1.php'))` pointer; all
+  route definitions (including the pre-existing `health`/`user` routes,
+  moved for consistency) live in the new `routes/api_v1.php`. Updated
+  `docs/API_CONVENTIONS.md`'s "Base URL & versioning" section to match
+  (previously said to treat the unversioned API as v1 implicitly — this task
+  is that promised introduction of real versioning).
+- **New endpoints, all under `/api/v1`**: `POST auth/register`, `POST
+  auth/login`, `POST auth/logout`, `POST auth/logout-all-devices`, `POST
+  auth/forgot-password`, `POST auth/reset-password`, `GET`/`PUT profile`,
+  `PUT profile/password`, `GET`/`POST addresses`, `PUT`/`DELETE
+  addresses/{address}`, `POST addresses/{address}/default` —
+  `App\Http\Controllers\Api\V1\{AuthController, PasswordResetController,
+  ProfileController, CustomerAddressController}`.
+- **New**: Form Requests under `App\Http\Requests\Api\V1\{Auth,Profile,Address}`,
+  `App\Http\Resources\{UserResource, CustomerAddressResource}`,
+  `App\Policies\CustomerAddressPolicy` (view/update/delete, ownership by
+  `user_id`), `App\Notifications\ApiResetPasswordNotification` (overrides
+  `User::sendPasswordResetNotification()` to email the raw reset token
+  instead of Laravel's default web-URL link — this backend has no
+  reset-password web page, and a numeric OTP was explicitly out of scope),
+  `lang/{en,ar}/address.php`, new keys in the existing
+  `lang/{en,ar}/{auth,passwords,validation}.php`.
+- **Security properties, by construction**: `role` is never settable through
+  register/update-profile (not in the Form Request rules, and not
+  mass-assignable on `User` regardless — verified by a dedicated test).
+  Forgot-password **always returns the identical response** whether or not
+  the email belongs to a real account (`Password::sendResetLink()`'s return
+  value is deliberately ignored) — cannot be used to enumerate accounts.
+  Every address operation checks ownership via `CustomerAddressPolicy`
+  (`403` for another user's address, verified for update/delete/set-default).
+  Deleting an address linked to a past order needs no new blocking logic —
+  the schema task's existing snapshot design (`orders.delivery_address_*`
+  columns + `customer_address_id` `nullOnDelete()`) already guarantees the
+  order's recorded delivery details survive untouched; proven with a
+  dedicated test rather than added as new code.
+- **Rate limiting**: named limiters `login` (5/minute) and `forgot-password`
+  (3/minute) in `AppServiceProvider::boot()`, both keyed by `email + IP` (not
+  IP alone, so a shared NAT/proxy can't lock out every account behind it; not
+  email alone, so an attacker can't lock a victim out from anywhere) —
+  applied via `throttle:login`/`throttle:forgot-password` middleware.
+- **Token semantics**: tokens are named after the client-supplied
+  `device_name`. `logout` revokes only the current request's token;
+  `logout-all-devices` and `reset-password` revoke every token; changing the
+  password revokes every *other* token but preserves the session used to
+  make the change.
+- **A real bug found while smoke-testing, not by inspection**:
+  `ProfileController::changePassword()` called
+  `$user->currentAccessToken()->id` to exclude the current session's token
+  from revocation. `currentAccessToken()` returns a `Laravel\Sanctum\
+  TransientToken` (no database `id`) whenever a request authenticates via
+  the `web` session guard instead of a real bearer token — which is exactly
+  what happens under `actingAs()` in tests, and could in principle happen
+  for any request carrying a `web` session (Sanctum's guard checks the
+  configured session guard *before* falling back to bearer-token lookup;
+  see `config/sanctum.php`). This crashed with a 500
+  (`Undefined property: TransientToken::$id`). Fixed to check `instanceof
+  PersonalAccessToken` first and, if not, revoke every real token instead
+  (there's no specific device token to preserve when the request wasn't
+  authenticated by one). Caught by the automated test suite, not manual
+  `curl` smoke-testing — manual testing only ever used real bearer tokens,
+  which never hit this path.
+- **A test-harness-only quirk, not a production bug**: tests that simulate
+  two different devices' tokens in *sequential* HTTP calls within one test
+  method (e.g. "device A logs out, device B is still logged in") saw the
+  first-resolved user staying authenticated on later calls regardless of
+  the token sent. Root cause: Sanctum's guard (`RequestGuard`) memoizes the
+  resolved user for the guard instance's lifetime, and Laravel's test
+  client reuses the same application/container (and therefore the same
+  cached guard) across multiple simulated requests within a single test —
+  unlike production, where every real HTTP request gets a fresh guard.
+  Added `TestCase::forgetAuthGuards()` (calls `Auth::forgetGuards()`) and
+  call it between same-test requests that switch which token/user is
+  authenticating.
+- **Tests**: `tests/Feature/Api/V1/{AuthTest, PasswordResetTest,
+  ProfileTest, CustomerAddressTest, RateLimitingTest}`, 39 tests covering
+  register (including the role-escalation guard and duplicate-email/
+  password-confirmation validation), login (success, wrong password, unknown
+  email, device-named tokens), single-device vs. all-devices logout,
+  protected-route authentication, forgot-password's anti-enumeration
+  guarantee (byte-identical responses) and that it actually creates a
+  reset-token row, reset-password (valid/invalid token, token revocation),
+  profile view/update (including the cross-user unique-email check),
+  change-password (correct/wrong current password, other-devices-revoked/
+  current-session-preserved), address CRUD, first-address-auto-default,
+  default-exclusivity, cross-user ownership on update/delete/set-default
+  (403), the address-deletion/order-snapshot guarantee, and rate limiting on
+  both `login` and `forgot-password`. Also updated the pre-existing
+  `HealthEndpointTest`/`ApiResponseFormatTest` to the new `/api/v1/...`
+  paths.
+- Full backend suite: **206 tests / 537 assertions** (up from 172/437),
+  Pint clean, verified against the real local MySQL `Talabna` database too —
+  a live server boot walkthrough of every endpoint (register → login →
+  profile → update → change-password → forgot-password → reset-password →
+  address CRUD → set-default → delete → logout/logout-all), including the
+  login and forgot-password rate limits actually returning `429` after 5/3
+  attempts, before the automated tests were written.
+
+## Order status transition system (previous task)
 
 `restaurant-backend` only. Full detail — the complete lifecycle graph, who
 can do what, and every rule enforced — is in the new
