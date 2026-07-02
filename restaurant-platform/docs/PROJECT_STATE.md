@@ -1,9 +1,82 @@
 # Project State
 
 Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
-then unified quality standards (Pint, unified API envelope, docs) across both projects.
+unified quality standards, then the full restaurant domain database schema.
 
-## Quality standards (this task)
+## Restaurant domain database schema (this task)
+
+Full single-restaurant ordering schema designed and built in
+`restaurant-backend` only — 20 new migrations, 19 new models, 18 factories
+(17 new + `UserFactory` extended), 6 seeder classes, 8 PHP enums, and 52
+passing tests. Full detail — every table, every relationship, every
+design decision (soft-delete choices, snapshotting, order-number generation,
+append-only history, enum lifecycle rules) — is in
+**`docs/DATABASE_SCHEMA.md`**; this section is a pointer/summary, not a
+duplicate.
+
+- **Entities**: every one of the 18 requested (`User`/`role` reused instead
+  of a separate `AdminUser`, `CustomerAddress`, `RestaurantSetting`,
+  `BusinessHour`, `Category`, `Product`, `ProductImage`, `OptionGroup`,
+  `OptionValue`, `ProductOptionGroup`, `DeliveryZone`, `Coupon`,
+  `CouponUsage`, `Order`, `OrderItem`, `OrderItemOption`,
+  `OrderStatusHistory`, `Payment`, `DeviceToken`), plus one internal helper
+  table not customer-facing: `order_number_sequences` (backs
+  `Order::generateOrderNumber()`'s uniqueness guarantee under concurrency —
+  see `docs/DATABASE_SCHEMA.md` for why a dedicated table was needed instead
+  of just counting rows).
+- **Enums** (`app/Enums/`): `UserRole`, `OrderStatus` (with
+  `canTransitionTo()`/`isTerminal()` lifecycle rules), `PaymentStatus`,
+  `PaymentMethod`, `DeliveryType`, `OptionSelectionType`, `CouponType`,
+  `DevicePlatform`. No database `ENUM` columns anywhere — all plain
+  `string` columns cast through these.
+- **Money**: every monetary column is an unsigned integer (smallest currency
+  unit), cast to PHP `int`. No floats/decimals for money anywhere.
+- **Snapshotting**: `order_items` (product name/price),
+  `order_item_options` (option group/value name/price), and `orders`
+  (delivery address line/city/lat/lng) all copy what they need at order
+  time, with nullable FKs back to the live rows. Verified with dedicated
+  tests that deleting/editing a product, option value, or address never
+  changes an existing order.
+- **`users.role`**: simplest-safe choice over a separate `AdminUser` table —
+  a `role` column, **excluded from mass assignment** (privilege-escalation
+  guard), plus `User implements FilamentUser` so only `role = admin` can
+  reach `/admin` (verified: without this, Filament lets *any* authenticated
+  user into the panel by default — a real gap that would've opened up once
+  customer accounts exist in the same table).
+- **`order_status_histories`**: append-only, enforced in
+  `App\Models\OrderStatusHistory` (`updating()`/`deleting()` hooks throw
+  `LogicException`), not just documented as a convention. No `updated_at`
+  column exists on the table.
+- **Soft deletes**: `categories`, `products`, `option_groups`,
+  `option_values`, `delivery_zones`, `coupons` — all "catalog/pricing
+  configuration" an admin might retire, safe because of snapshotting. Never
+  soft-deleted: `users`, transactional tables (`orders` and everything under
+  it, `payments`, `coupon_usages`), `restaurant_settings`,
+  `business_hours`, `product_images`, `product_option_groups`.
+- **`RestaurantSetting`**: singleton via `RestaurantSetting::current()`
+  (always `id = 1`, `firstOrCreate`).
+- **Seeders** (`database/seeders/`): `RestaurantSettingSeeder`,
+  `BusinessHourSeeder` (7 rows, Friday closed), `CategorySeeder` (5
+  categories), `OptionSeeder` ("Size" + "Extra Toppings" groups with
+  values), `ProductSeeder` (8 demo products, options attached where it
+  makes sense), `DeliveryZoneSeeder` (2 zones). All idempotent
+  (`updateOrCreate`), safe to re-run. `DatabaseSeeder` also creates one
+  `admin@example.com` (role=admin) and one `test@example.com` (role=customer,
+  the pre-existing default) — both guarded with existence checks so running
+  the seeder twice doesn't hit the unique-email constraint (a real bug
+  caught by `DatabaseSeederTest::test_running_the_seeder_twice...`).
+- **Tests** (52 total, all passing): `tests/Unit/Enums/OrderStatusTest.php`
+  (transition graph), `tests/Feature/Models/*` (relationships, casts,
+  mass-assignment guard, Filament access control, restrict/cascade/null-on-delete
+  FK behavior, append-only enforcement, snapshot integrity, coupon-usage
+  uniqueness, `RestaurantSetting` singleton behavior), and
+  `tests/Feature/DatabaseSeederTest.php` (seeder runs clean, and twice
+  doesn't duplicate).
+- Verified end-to-end against the real local MySQL `Talabna` database too
+  (not just the SQLite test suite): `php artisan migrate:fresh --seed
+  --force` and a live server boot of both `/admin/login` and `/api/health`.
+
+## Quality standards (previous task)
 
 Applies to both projects unless noted. See `CONTRIBUTING.md`,
 `docs/CODING_STANDARDS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, and the
@@ -221,12 +294,15 @@ see "Decisions & assumptions" above.)
 
 ## Next likely tasks (not started)
 
-- Design the restaurant domain schema (menu items, categories, orders, order
-  items, payments) in `restaurant-backend`, with Enums for order/payment
-  status and delivery type.
-- Build the first real API endpoints following `docs/API_CONVENTIONS.md`.
+- Build the first real API endpoints (menu browsing, checkout/place-order,
+  order status) following `docs/API_CONVENTIONS.md` and
+  `docs/DATABASE_SCHEMA.md` — Form Requests, Policies, Services/Actions for
+  order total calculation and coupon validation, API Resources.
 - Wire an actual HTTP client/service in `restaurant-customer-app` that reads
   `RESTAURANT_BACKEND_URL` and calls the backend API.
 - Decide and implement the real `NATIVEPHP_APP_ID` reverse-DNS identifier.
 - Install `php8.4-sqlite3` on this host (requires sudo) if the team wants to
   standardize on PHP 8.4.
+- Filament Resources for the new models (currently there's a schema/API
+  layer but no admin UI yet to manage products/categories/orders through
+  `/admin`).
