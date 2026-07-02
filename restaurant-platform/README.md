@@ -39,10 +39,15 @@ composer install
 php artisan key:generate
 touch database/database.sqlite   # skip this if you're using MySQL/PostgreSQL instead — see .env
 php artisan migrate
-php artisan make:filament-user   # create your first admin account
+php artisan db:seed              # optional: realistic demo data — see restaurant-backend/README.dev.md
+php artisan make:filament-user   # or use the seeded demo admin, see below
 ```
 
 Admin panel: `http://localhost:8000/admin`
+
+Demo login credentials created by `db:seed` (**local development only**,
+never real credentials) are documented in
+[`restaurant-backend/README.dev.md`](restaurant-backend/README.dev.md).
 
 ## Getting started — `restaurant-customer-app`
 

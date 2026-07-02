@@ -1,9 +1,95 @@
 # Project State
 
 Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
-unified quality standards, then the full restaurant domain database schema.
+unified quality standards, the full restaurant domain database schema, then
+realistic local dev/demo seed data on top of it.
 
-## Restaurant domain database schema (this task)
+## Realistic local dev seed data (this task)
+
+Expanded the schema-only seeders from the previous task into full demo data,
+still `restaurant-backend` only. Full detail (what's seeded, demo login
+credentials) is in **`restaurant-backend/README.dev.md`** — this section is
+a pointer/summary.
+
+- **`OptionSeeder`** now seeds exactly the 4 requested groups: **Size**,
+  **Bread Type** (both single-select), **Extras**, **Sauces** (both
+  multi-select) — up from the previous task's 2 groups ("Extra Toppings"
+  renamed to "Extras" to match).
+- **`ProductSeeder`** grew from 8 to **17 products** across the 5
+  categories, each with the option groups that make sense for it attached,
+  and now also creates a **`ProductImage`** row per product pointing at a
+  local placeholder.
+- **Placeholder images**: 5 small hand-written local SVGs, one per category,
+  under `public/images/placeholders/*.svg` — deliberately not calling any
+  external placeholder-image service, so seeding works offline and never
+  depends on a third party's uptime. Verified served correctly by a live
+  request (`GET /images/placeholders/pizza.svg` → 200) and that every
+  `product_images.path` points at a file that actually exists
+  (`assertFileExists` in `DatabaseSeederTest`).
+- **`DeliveryZoneSeeder`**: 3 zones now (was 2), each with both a
+  `delivery_fee_amount` and a `min_order_amount` set (previously
+  `min_order_amount` was left null) — matches "fees and a minimum order"
+  literally, not just "fees".
+- **`CouponSeeder`** (new): 3 demo coupons — `WELCOME10` (10%, capped,
+  1-per-user), `SAVE5` (fixed amount), `EXPIRED20` (percentage, already
+  expired — a deliberate case for testing rejection once checkout logic
+  exists).
+- **`AdminUserSeeder`** (new, replaces the inline block that used to live in
+  `DatabaseSeeder`): one `admin@example.com` / `password` account,
+  `role = admin`. Password is the standard Laravel dev-seed placeholder
+  (`UserFactory`'s default `Hash::make('password')`) — same one every fresh
+  Laravel install ships with, **not** a production credential, and called
+  out as such in `README.dev.md`.
+- **`CustomerSeeder`** (new): 5 demo customers (`customer1@example.com` ..
+  `customer5@example.com`, same placeholder password), each with 1-2
+  addresses via `CustomerAddressFactory`. Idempotent via a plain "does this
+  email already exist" check per customer (same pattern used for the admin
+  account).
+- **`OrderSeeder`** (new): 9 demo orders engineered to cover **every**
+  `OrderStatus` value at least once (delivered appears twice: once as a
+  `delivery` order, once as a `pickup` order, since the two have different
+  status chains). Each order gets real `OrderItem`/`OrderItemOption` rows
+  built from the actual seeded catalog (current product prices and each
+  attached option group's default value — this is correct, not a
+  shortcut, since "order time" for freshly-seeded demo data *is* seed
+  time), plus a full, plausible `OrderStatusHistory` chain leading up to
+  its final status (e.g. a `cancelled` order has
+  `pending → accepted → cancelled`, not just a single `cancelled` row) and
+  a `Payment` row for the two `delivered` orders.
+  **Idempotency**: rather than per-row existence checks (impractical for
+  orders, which don't have a natural unique business key to key off of),
+  the whole seeder no-ops if *any* order already belongs to one of the 5
+  demo customers. Verified genuinely idempotent — not just
+  crash-free — end to end: ran `php artisan db:seed` twice in a row against
+  the real local MySQL database and confirmed every table's row count was
+  byte-for-byte identical after the second run.
+- **`DatabaseSeeder`** now chains all 10 seeders in dependency order
+  (catalog/config → `AdminUserSeeder` → `CustomerSeeder` → `OrderSeeder`,
+  since orders need customers and products to already exist).
+- **`restaurant-backend/README.dev.md`** (new): demo login credentials
+  table, what each seeder creates, and the placeholder-image note — clearly
+  headed "not for production." Linked from the root `README.md`'s
+  `restaurant-backend` getting-started section.
+- **Tests**: `DatabaseSeederTest` grew from 2 to **9 tests** covering: the
+  baseline counts (≥4 categories, ≥15 products, ≥4 option groups, ≥2
+  zones), every product having an image file that exists on disk, every
+  delivery zone having both a fee and a minimum order, the coupon set
+  covering both types plus an expired one, the admin account's password
+  hash matching the known dev placeholder (not asserting an actual
+  plaintext secret, just that it's the well-known one), every demo customer
+  having at least one address, **every `OrderStatus` value being
+  represented** among the seeded orders, every order having items and a
+  status history whose last entry matches the order's current status, and
+  the full re-run-does-not-duplicate-anything idempotency check across all
+  10 seeders' data at once.
+- Full suite: **59 tests / 240 assertions**, Pint clean, verified against
+  both the SQLite test database and the real local MySQL `Talabna`
+  database (fresh seed, re-seed for idempotency, live server boot of
+  `/admin/login`, a placeholder image URL, and `/api/health`, plus an
+  actual `Auth::attempt()` check that the seeded admin and customer1
+  credentials really authenticate).
+
+## Restaurant domain database schema (previous task)
 
 Full single-restaurant ordering schema designed and built in
 `restaurant-backend` only — 20 new migrations, 19 new models, 18 factories

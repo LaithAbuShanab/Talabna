@@ -13,30 +13,40 @@ use Illuminate\Support\Str;
 class ProductSeeder extends Seeder
 {
     /**
-     * A handful of demo products per category, with the "Size" and
-     * "Extra Toppings" option groups (see OptionSeeder) attached to the
-     * ones that make sense for them.
+     * 17 demo products across the 5 seeded categories, each with a local
+     * placeholder image (public/images/placeholders/*.svg — no external
+     * image service dependency) and the option groups that make sense for
+     * it attached via the product_option_groups pivot.
      */
     public function run(): void
     {
         $products = [
             'Burgers' => [
-                ['name' => 'Classic Beef Burger', 'price' => 450, 'options' => ['Size']],
-                ['name' => 'Chicken Burger', 'price' => 400, 'options' => ['Size']],
+                ['name' => 'Classic Beef Burger', 'price' => 450, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Chicken Burger', 'price' => 400, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Double Beef Burger', 'price' => 600, 'options' => ['Bread Type', 'Extras', 'Sauces']],
+                ['name' => 'Veggie Burger', 'price' => 380, 'options' => ['Bread Type', 'Extras', 'Sauces']],
             ],
             'Pizza' => [
-                ['name' => 'Margherita Pizza', 'price' => 600, 'options' => ['Size', 'Extra Toppings']],
-                ['name' => 'Pepperoni Pizza', 'price' => 700, 'options' => ['Size', 'Extra Toppings']],
+                ['name' => 'Margherita Pizza', 'price' => 600, 'options' => ['Size', 'Extras']],
+                ['name' => 'Pepperoni Pizza', 'price' => 700, 'options' => ['Size', 'Extras']],
+                ['name' => 'Vegetable Pizza', 'price' => 620, 'options' => ['Size', 'Extras']],
+                ['name' => 'BBQ Chicken Pizza', 'price' => 720, 'options' => ['Size', 'Extras']],
             ],
             'Sandwiches' => [
-                ['name' => 'Club Sandwich', 'price' => 350, 'options' => []],
+                ['name' => 'Club Sandwich', 'price' => 350, 'options' => ['Bread Type', 'Sauces']],
+                ['name' => 'Grilled Cheese Sandwich', 'price' => 300, 'options' => ['Bread Type', 'Sauces']],
+                ['name' => 'Tuna Sandwich', 'price' => 370, 'options' => ['Bread Type', 'Sauces']],
             ],
             'Drinks' => [
                 ['name' => 'Soft Drink', 'price' => 100, 'options' => []],
                 ['name' => 'Fresh Orange Juice', 'price' => 200, 'options' => []],
+                ['name' => 'Iced Tea', 'price' => 150, 'options' => []],
+                ['name' => 'Bottled Water', 'price' => 50, 'options' => []],
             ],
             'Desserts' => [
                 ['name' => 'Chocolate Cake', 'price' => 250, 'options' => []],
+                ['name' => 'Cheesecake', 'price' => 280, 'options' => []],
             ],
         ];
 
@@ -44,6 +54,7 @@ class ProductSeeder extends Seeder
 
         foreach ($products as $categoryName => $items) {
             $category = Category::query()->where('name', $categoryName)->firstOrFail();
+            $imagePath = 'images/placeholders/'.Str::slug($categoryName).'.svg';
 
             foreach ($items as $index => $item) {
                 $product = Product::query()->updateOrCreate(
@@ -55,6 +66,11 @@ class ProductSeeder extends Seeder
                         'is_available' => true,
                         'sort_order' => $index,
                     ],
+                );
+
+                $product->images()->updateOrCreate(
+                    ['path' => $imagePath],
+                    ['sort_order' => 0, 'is_primary' => true],
                 );
 
                 $groupIds = collect($item['options'])
