@@ -74,6 +74,7 @@ final class MenuCacheService
     {
         return Cache::remember(self::PRODUCTS_KEY, self::TTL_SECONDS, function (): array {
             $products = Product::query()
+                ->where('is_active', true)
                 ->where('is_available', true)
                 ->whereHas('category', fn ($query) => $query->where('is_active', true))
                 ->with([

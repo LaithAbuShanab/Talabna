@@ -24,8 +24,10 @@ class ProductFactory extends Factory
             'slug' => Str::slug($name),
             'description' => fake()->optional()->paragraph(),
             'price_amount' => fake()->numberBetween(300, 5000),
+            'is_active' => true,
             'is_available' => true,
             'sort_order' => fake()->numberBetween(0, 100),
+            'preparation_minutes' => fake()->optional()->numberBetween(5, 30),
         ];
     }
 
@@ -33,6 +35,13 @@ class ProductFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_available' => false,
+        ]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
         ]);
     }
 }

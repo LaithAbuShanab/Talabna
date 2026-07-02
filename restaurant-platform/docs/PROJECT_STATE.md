@@ -5,10 +5,106 @@ unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
 transition system, the versioned Sanctum-based auth/account API, the
-public menu/catalog API, the protected customer order endpoints, then the
-professional Filament v5 admin panel (roles, policies, audit trail).
+public menu/catalog API, the protected customer order endpoints, the
+professional Filament v5 admin panel (roles, policies, audit trail), then
+the Filament v5 admin Resources for the menu catalog itself (Category,
+Product, ProductImage, OptionGroup, OptionValue).
 
-## Filament v5 admin panel (this task)
+## Filament v5 admin menu Resources (this task)
+
+`restaurant-backend` only. Full detail — every field, every real bug found,
+the money major/minor-unit form pattern, the dual Resource/RelationManager
+design for images and values — is in the new
+**`docs/ADMIN_MENU_RESOURCES.md`**; this section is a pointer/summary.
+
+- **Five Resources**: `Categories\CategoryResource`, `Products\ProductResource`,
+  `ProductImages\ProductImageResource`, `OptionGroups\OptionGroupResource`,
+  `OptionValues\OptionValueResource`, all under the pre-existing **Menu**
+  navigation group. Same `super_admin`/`manager`-only authorization tier as
+  the rest of the catalog, via five new Policies
+  (`{Category,Product,ProductImage,OptionGroup,OptionValue}Policy`),
+  auto-discovered, `forceDelete` unconditionally denied on every
+  soft-deletable one.
+- **New `products` columns**: `is_active` (publish/unpublish, same meaning
+  as `Category.is_active` — distinct from the pre-existing `is_available`,
+  which is the kitchen's quicker "temporarily out of stock" toggle; both now
+  gate visibility in `MenuCacheService`/`CartPricingService`) and
+  `preparation_minutes` (nullable, informational only for now).
+- **Money in the admin form**: price fields (`Product.price_amount`,
+  `OptionValue.price_delta_amount`) convert transparently between the
+  currency's major units (what the admin types) and minor units (what's
+  stored/returned by the public API), via two new `App\Support\Money`
+  helpers (`toMinorUnits()`/`toMajorUnits()`) sharing the same
+  per-currency-decimals lookup the public API already used. `minValue(0)`
+  on both fields is the actual enforcement behind "never a negative price,"
+  proven by dedicated validation tests, not just declared.
+- **Category delete-protection**: `CategoryPolicy::delete()` refuses
+  deletion while the category still has any product (including
+  soft-deleted ones) — the delete action is simply never reachable in that
+  state, not a database error surfaced after the fact.
+- **Drag-and-drop reordering**: Filament v5's native
+  `->reorderable('sort_order')`, no extra package — for categories and for
+  an option group's values (`OptionGroups\RelationManagers\
+  ValuesRelationManager`).
+- **Product images and option values each get two entry points on
+  purpose**: a standalone Resource (flat, cross-entity, for finding
+  orphaned data) and a nested RelationManager on the owning resource's edit
+  page (the actually convenient place to manage one product's images or one
+  group's values) — both point at the same table, no conflict.
+- **Product↔OptionGroup linking** (`Products\RelationManagers\
+  OptionGroupsRelationManager`) uses a new plain `HasMany` relation
+  (`Product::productOptionGroups()`) straight onto the `ProductOptionGroup`
+  pivot model, rather than Filament's `BelongsToMany`-with-pivot-schema
+  APIs — a deliberately simpler, more predictable design for editing
+  per-product `is_required`/`min_select`/`max_select`.
+- **Four real bugs found by testing, not by reading the code**:
+  1. The new `productOptionGroups()` relation resolved to the *singular*
+     `product_option_group` table (missing the trailing `s`) —
+     `Illuminate\...\Concerns\AsPivot::getTable()` overrides Eloquent's
+     usual pluralized guess for any `Pivot` subclass without an explicit
+     `$table`, unnoticed until now because the existing `BelongsToMany`
+     relation always passed the table name explicitly. Fixed with
+     `protected $table = 'product_option_groups';`.
+  2. Every new image upload field defaulted to Filament's `local` disk,
+     which — under this app's Laravel-11-shaped `filesystems.php` — points
+     at `storage/app/private` and has no public URL at all; the `public`
+     disk also had no `storage:link` symlink yet. Fixed by adding
+     `->disk('public')` to every image field this task touched and running
+     `php artisan storage:link`. The pre-existing `RestaurantSetting.logo_path`
+     field has the same gap and is flagged (not silently fixed) as
+     out-of-scope follow-up.
+  3. `ProductImage.product_id` was missing from its `#[Fillable(...)]`
+     list, silently dropped on the standalone `ProductImageResource`'s
+     create form (`NOT NULL constraint failed`) — invisible on the nested
+     RelationManager path, since a relation's `create()` sets the foreign
+     key outside mass assignment entirely. Fixed by adding it.
+  4. `ImagesRelationManager::normalizePrimary()`'s tie-break by
+     `updated_at` was wrong, not just imprecise: two images saved within
+     the same second tie, and the stable sort then silently kept the
+     *first* (insertion-order) image primary regardless of which one the
+     admin had just marked. Fixed by passing the just-saved record
+     explicitly instead of inferring intent from a timestamp.
+- **Tests**: `tests/Feature/Filament/{CategoryResourceTest, ProductResourceTest,
+  ProductImageResourceTest, ProductImagesRelationManagerTest,
+  ProductOptionGroupsRelationManagerTest, OptionGroupResourceTest,
+  OptionGroupValuesRelationManagerTest, OptionValueResourceTest}` — 51 new
+  tests: creation, editing, validation (required fields, non-negative
+  prices, `max ≥ min`, scoped uniqueness), bulk enable/disable, soft
+  delete/restore, drag-and-drop reordering, the "never a force-delete
+  action"/"never delete a category with products" guarantees, and the full
+  super_admin/manager vs. kitchen/cashier/support access matrix over real
+  HTTP. Plus two new Menu API ripple tests
+  (`test_lists_only_active_products`, `test_rejects_an_inactive_product`)
+  for the new `is_active` column.
+- Full backend suite: **394 tests / 1197 assertions** (up from 343/932),
+  Pint clean, stable, verified against the real local MySQL `Talabna`
+  database — every resource's query/transform logic (counts, eager-loaded
+  images, money formatting, option group/value relations) exercised
+  directly against the existing 5 categories/17 products/4 option groups/14
+  option values/17 product images with no exceptions, and migrations
+  confirmed already applied.
+
+## Filament v5 admin panel (previous task)
 
 `restaurant-backend` only. Full detail — the role matrix, every policy,
 navigation groups, audit trail wiring, and the "why not a permissions

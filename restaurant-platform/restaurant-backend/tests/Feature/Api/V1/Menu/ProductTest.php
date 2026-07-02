@@ -37,6 +37,18 @@ class ProductTest extends TestCase
         $response->assertJsonPath('data.data.0.name.en', 'Available');
     }
 
+    public function test_lists_only_active_products(): void
+    {
+        $category = Category::factory()->create();
+        Product::factory()->for($category)->create(['name' => 'Active']);
+        Product::factory()->for($category)->inactive()->create(['name' => 'Inactive']);
+
+        $response = $this->getJson('/api/v1/products');
+
+        $response->assertOk()->assertJsonCount(1, 'data.data');
+        $response->assertJsonPath('data.data.0.name.en', 'Active');
+    }
+
     public function test_excludes_products_belonging_to_an_inactive_category(): void
     {
         $activeCategory = Category::factory()->create();

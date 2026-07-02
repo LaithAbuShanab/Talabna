@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['path', 'sort_order', 'is_primary'])]
+#[Fillable(['product_id', 'path', 'sort_order', 'is_primary'])]
 class ProductImage extends Model
 {
     /** @use HasFactory<ProductImageFactory> */

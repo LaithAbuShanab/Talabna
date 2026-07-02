@@ -152,6 +152,19 @@ class CartPreviewTest extends TestCase
         $response->assertStatus(422)->assertJsonPath('errors.code', 'product_unavailable');
     }
 
+    public function test_rejects_an_inactive_product(): void
+    {
+        $category = Category::factory()->create();
+        $product = Product::factory()->for($category)->inactive()->create();
+
+        $response = $this->postJson('/api/v1/cart/preview', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            'delivery_type' => 'pickup',
+        ]);
+
+        $response->assertStatus(422)->assertJsonPath('errors.code', 'product_unavailable');
+    }
+
     public function test_rejects_a_nonexistent_product(): void
     {
         $response = $this->postJson('/api/v1/cart/preview', [

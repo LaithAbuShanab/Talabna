@@ -28,12 +28,34 @@ final class Money
      */
     public static function format(int $amountMinor, string $currencyCode): array
     {
-        $decimals = self::MINOR_UNIT_DECIMALS[$currencyCode] ?? 2;
+        $decimals = self::decimalsFor($currencyCode);
 
         return [
             'amount_minor' => $amountMinor,
             'formatted' => number_format($amountMinor / (10 ** $decimals), $decimals),
             'currency' => $currencyCode,
         ];
+    }
+
+    /**
+     * Exposed so anywhere converting between major/minor units (e.g. the
+     * admin panel's price input — see
+     * App\Filament\Resources\Products\Schemas\ProductForm) uses the same
+     * per-currency exponent as the public API, instead of a second
+     * hardcoded copy that could drift out of sync.
+     */
+    public static function decimalsFor(string $currencyCode): int
+    {
+        return self::MINOR_UNIT_DECIMALS[$currencyCode] ?? 2;
+    }
+
+    public static function toMinorUnits(float $majorAmount, string $currencyCode): int
+    {
+        return (int) round($majorAmount * (10 ** self::decimalsFor($currencyCode)));
+    }
+
+    public static function toMajorUnits(int $minorAmount, string $currencyCode): float
+    {
+        return $minorAmount / (10 ** self::decimalsFor($currencyCode));
     }
 }

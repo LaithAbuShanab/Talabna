@@ -123,7 +123,7 @@ final class CartPricingService
             throw new CartPricingException('product_not_found');
         }
 
-        if (! $product->is_available) {
+        if (! $product->is_active || ! $product->is_available) {
             throw new CartPricingException('product_unavailable', ['name' => $product->name]);
         }
 
