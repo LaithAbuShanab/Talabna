@@ -10,8 +10,10 @@ return [
     |--------------------------------------------------------------------------
     |
     | Thrown by App\Exceptions\OrderCreationException (from
-    | App\Actions\CreateOrderAction) and App\Exceptions\OrderStatusTransitionException
-    | (from App\Services\OrderStatusTransitionService). Keep in sync with
+    | App\Actions\CreateOrderAction), App\Exceptions\OrderStatusTransitionException
+    | (from App\Services\OrderStatusTransitionService), and
+    | App\Exceptions\OrderReviewException (from
+    | App\Http\Controllers\Api\V1\OrderReviewController). Keep in sync with
     | lang/ar/order.php. Cart/coupon/pricing errors use lang/{locale}/cart.php
     | instead — see App\Exceptions\CartPricingException.
     |
@@ -27,6 +29,8 @@ return [
         'unauthorized_transition' => 'You are not allowed to make this change to the order.',
         'unauthorized_special_permission' => 'This change requires special permission that your account does not have.',
         'reason_required' => 'Please provide a reason for this rejection/cancellation.',
+        'order_not_delivered' => 'You can only review an order after it has been delivered.',
+        'already_reviewed' => 'You have already submitted a review for this order.',
     ],
 
 ];

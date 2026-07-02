@@ -10,8 +10,10 @@ return [
     |--------------------------------------------------------------------------
     |
     | Thrown by App\Exceptions\OrderCreationException (from
-    | App\Actions\CreateOrderAction) and App\Exceptions\OrderStatusTransitionException
-    | (from App\Services\OrderStatusTransitionService). Keep in sync with
+    | App\Actions\CreateOrderAction), App\Exceptions\OrderStatusTransitionException
+    | (from App\Services\OrderStatusTransitionService), and
+    | App\Exceptions\OrderReviewException (from
+    | App\Http\Controllers\Api\V1\OrderReviewController). Keep in sync with
     | lang/en/order.php. Cart/coupon/pricing errors use lang/{locale}/cart.php
     | instead — see App\Exceptions\CartPricingException.
     |
@@ -27,6 +29,8 @@ return [
         'unauthorized_transition' => 'لا تملك صلاحية تنفيذ هذا التغيير على الطلب.',
         'unauthorized_special_permission' => 'يتطلب هذا التغيير صلاحية خاصة لا يملكها حسابك.',
         'reason_required' => 'يرجى إدخال سبب للرفض أو الإلغاء.',
+        'order_not_delivered' => 'يمكنك تقييم الطلب فقط بعد تسليمه.',
+        'already_reviewed' => 'لقد قمت بالفعل بإرسال تقييم لهذا الطلب.',
     ],
 
 ];

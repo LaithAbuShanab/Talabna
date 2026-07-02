@@ -47,9 +47,11 @@ final class OrderResource extends JsonResource
             'rejection_reason' => $this->rejection_reason,
             'cancellation_reason' => $this->cancellation_reason,
             'expected_delivery_at' => $this->expected_delivery_at?->toIso8601String(),
+            'can_be_cancelled' => $this->status->isCustomerCancellable(),
             'items' => OrderItemResource::collection($this->whenLoaded('items')),
             'status_histories' => OrderStatusHistoryResource::collection($this->whenLoaded('statusHistories')),
             'payments' => PaymentResource::collection($this->whenLoaded('payments')),
+            'review' => $this->whenLoaded('review', fn () => $this->review !== null ? new OrderReviewResource($this->review) : null),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

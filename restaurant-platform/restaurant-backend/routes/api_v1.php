@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\V1\CartPreviewController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CustomerAddressController;
 use App\Http\Controllers\Api\V1\DeliveryZoneController;
+use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\OrderReviewController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ProfileController;
@@ -46,6 +48,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::put('/addresses/{address}', [CustomerAddressController::class, 'update']);
     Route::delete('/addresses/{address}', [CustomerAddressController::class, 'destroy']);
     Route::post('/addresses/{address}/default', [CustomerAddressController::class, 'setDefault']);
+
+    // See docs/API_ORDERS.md.
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders/{order}', [OrderController::class, 'show']);
+    Route::get('/orders/{order}/timeline', [OrderController::class, 'timeline']);
+    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{order}/reorder-preview', [OrderController::class, 'reorderPreview']);
+    Route::post('/orders/{order}/review', [OrderReviewController::class, 'store']);
 });
 
 // Public menu/catalog API — see docs/API_MENU.md. No auth:sanctum: anyone

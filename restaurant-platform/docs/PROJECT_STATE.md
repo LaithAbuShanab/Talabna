@@ -4,10 +4,96 @@ Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub pu
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
-transition system, the versioned Sanctum-based auth/account API, then the
-public menu/catalog API.
+transition system, the versioned Sanctum-based auth/account API, the
+public menu/catalog API, then the protected customer order endpoints.
 
-## Public menu & catalog API (this task)
+## Protected customer order endpoints (this task)
+
+`restaurant-backend` only. Full endpoint-by-endpoint detail is in the new
+**`docs/API_ORDERS.md`**; this section is a pointer/summary.
+
+- **New endpoints, all under `/api/v1/orders`, `auth:sanctum`, scoped to
+  the caller's own orders**: `GET /` (paginated, `status` filter, newest
+  first, lean payload), `POST /` (create — requires an `Idempotency-Key`
+  header), `GET /{order}` (full detail: status timeline, payment status,
+  `expected_delivery_at`, `can_be_cancelled`, embedded `review`),
+  `GET /{order}/timeline` (status history only), `POST /{order}/cancel`
+  (per the existing customer-cancellation policy), `POST
+  /{order}/reorder-preview` (recomputes a past order's items at *current*
+  prices via `CartPricingService` — no order is created), `POST
+  /{order}/review` (new — see below).
+- **Nothing new was built for order creation/cancellation/pricing
+  business logic** — `App\Actions\CreateOrderAction`,
+  `App\Services\{CartPricingService, OrderStatusTransitionService}`, and
+  `App\Policies\OrderPolicy` already existed from earlier tasks and were
+  simply wired to routes for the first time. Added one new ability,
+  `OrderPolicy::view()` (bare ownership), kept deliberately separate from
+  `cancelAsCustomer()` so "not your order" (`403`) and "your order, but
+  not cancellable right now" (`403` with a specific `errors.code`, see
+  below) are never conflated into the same generic error.
+- **`OrderCreationException` and `OrderStatusTransitionException` wired
+  into `bootstrap/app.php`'s envelope for the first time** — both existed
+  since earlier tasks but had never been reachable over HTTP (no route
+  had thrown them yet). `OrderStatusTransitionException`'s two
+  `unauthorized_*` codes render as `403` (a permission problem); every
+  other code renders as `422` (a state/input problem) — a distinction
+  `CartPricingException`/`OrderCreationException` didn't need, since none
+  of their codes are permission-related.
+- **New review/rating schema** (didn't exist before this task, as
+  anticipated by the request): `order_reviews` (one row per order, unique
+  on `order_id`, `rating` 1–5, optional `comment`), `App\Models\OrderReview`,
+  `App\Exceptions\OrderReviewException` (`order_not_delivered`,
+  `already_reviewed` — the latter also enforced by the DB unique
+  constraint as defense in depth against a concurrent-submission race).
+  Embedded in `OrderResource.review`, `null` until one exists.
+- **Idempotency**: the `Idempotency-Key` HTTP header is merged into the
+  Form Request's validated input in `prepareForValidation()`
+  (`CreateOrderRequest`) so a missing key fails validation exactly like a
+  missing body field, rather than needing a separate controller-level
+  check. The underlying (`user_id`, `idempotency_key`) uniqueness
+  guarantee already existed (`CreateOrderAction`, from the checkout task) —
+  this task's job was purely exposing it as a header at the HTTP layer.
+- **Reorder-preview reuses `CartPricingService` exactly** — rebuilds the
+  same `CartPricingRequestData` `POST /cart/preview` takes from the old
+  order's `items`/`options` (same delivery type/zone; a *new* optional
+  coupon can be applied, the original coupon is never silently reapplied),
+  so a reorder preview can never drift from what `/cart/preview` would
+  compute for the same inputs. Items whose `product_id` is `null` (product
+  hard-deleted since) are dropped and listed in `unavailable_items`; any
+  other pricing failure among the surviving items fails the whole preview
+  with the same `CartPricingException` `/cart/preview` would raise —
+  deliberately not a new partial-recovery scheme.
+- **Administrative-field hiding**: `OrderStatusHistoryResource` already
+  only exposed `{status, note, created_at}` (no `changed_by_user_id`) from
+  the earlier order-status-transition task — reused as-is for the new
+  `timeline` endpoint, satisfying this task's "hide internal
+  administrative info" requirement with no changes needed.
+- **Tests**: `tests/Feature/Api/V1/Order/{OrderCreationTest,
+  OrderListTest, OrderShowTest, OrderCancelTest, OrderReorderPreviewTest,
+  OrderReviewTest}`, 45 tests — idempotency (same key + different body
+  still returns the original order untouched; a different key creates a
+  second one), every validation rule, cross-user ownership on all five
+  order-scoped actions (403, and the underlying row provably unchanged),
+  newest-first ordering, the status filter, pagination, the list payload
+  staying lean (no `items` key at all) vs. the full detail shape, the
+  customer-cancellable window (`pending`/`accepted` succeed, `preparing`+
+  gets `403 unauthorized_transition`, terminal states get
+  `422 terminal_state`), reorder-preview never creating a row and pulling
+  *current* prices instead of the order's original snapshot, deleted-item
+  flagging, review gating (must be delivered, exactly once, 1–5 bounds),
+  and the review appearing embedded in order detail afterward.
+- Full backend suite: **294 tests / 795 assertions** (up from 249/671),
+  Pint clean with zero fixes needed, stable across 3 repeated runs,
+  verified against the real local MySQL `Talabna` database end-to-end via
+  `curl` — register → create order (with and without the idempotency
+  header, same key twice, different key) → list/filter → show → timeline
+  → cross-user 403s on show/cancel/timeline → cancel → re-cancel rejected
+  (terminal state) → reorder-preview (confirmed no new order row) →
+  review rejected pre-delivery → marked delivered via `tinker` → review
+  accepted → duplicate review rejected → review visible embedded in
+  the order.
+
+## Public menu & catalog API (previous task)
 
 `restaurant-backend` only. Full endpoint-by-endpoint detail is in the new
 **`docs/API_MENU.md`**; this section is a pointer/summary plus the real

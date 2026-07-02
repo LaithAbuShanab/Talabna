@@ -223,6 +223,14 @@ return [
         'delivery_type' => 'نوع التوصيل',
         'delivery_zone_id' => 'منطقة التوصيل',
         'coupon_code' => 'رمز الكوبون',
+        'idempotency_key' => 'مفتاح عدم التكرار',
+        'payment_method' => 'طريقة الدفع',
+        'customer_address_id' => 'عنوان التوصيل',
+        'customer_notes' => 'ملاحظات',
+        'reason' => 'السبب',
+        'rating' => 'التقييم',
+        'comment' => 'التعليق',
+        'status' => 'الحالة',
     ],
 
 ];

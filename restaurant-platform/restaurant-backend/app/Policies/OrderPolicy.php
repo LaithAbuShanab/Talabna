@@ -19,6 +19,20 @@ use App\Models\User;
 class OrderPolicy
 {
     /**
+     * Bare ownership check — used by the read-only customer endpoints
+     * (show/timeline/reorder-preview/review) in
+     * App\Http\Controllers\Api\V1\{OrderController, OrderReviewController}.
+     * Deliberately separate from cancelAsCustomer(): a wrong-status
+     * cancellation attempt on the customer's *own* order should fail with
+     * a specific "can't cancel at this stage" business error, not get
+     * conflated with "this isn't your order" (403).
+     */
+    public function view(User $user, Order $order): bool
+    {
+        return $user->id === $order->user_id;
+    }
+
+    /**
      * The customer's own, limited cancellation right: their own order,
      * and only before the kitchen has started preparing it.
      */

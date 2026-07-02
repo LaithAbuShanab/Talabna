@@ -220,6 +220,14 @@ return [
         'delivery_type' => 'delivery type',
         'delivery_zone_id' => 'delivery zone',
         'coupon_code' => 'coupon code',
+        'idempotency_key' => 'idempotency key',
+        'payment_method' => 'payment method',
+        'customer_address_id' => 'delivery address',
+        'customer_notes' => 'notes',
+        'reason' => 'reason',
+        'rating' => 'rating',
+        'comment' => 'comment',
+        'status' => 'status',
     ],
 
 ];

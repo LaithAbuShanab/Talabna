@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Exceptions\CartPricingException;
+use App\Exceptions\OrderCreationException;
+use App\Exceptions\OrderReviewException;
+use App\Exceptions\OrderStatusTransitionException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -57,6 +60,21 @@ return Application::configure(basePath: dirname(__DIR__))
                     status: $e->status() ?: 403,
                 ),
                 $e instanceof CartPricingException => ApiResponse::error(
+                    $e->getMessage(),
+                    ['code' => $e->errorCode],
+                    422,
+                ),
+                $e instanceof OrderCreationException => ApiResponse::error(
+                    $e->getMessage(),
+                    ['code' => $e->errorCode],
+                    422,
+                ),
+                $e instanceof OrderStatusTransitionException => ApiResponse::error(
+                    $e->getMessage(),
+                    ['code' => $e->errorCode],
+                    str_starts_with($e->errorCode, 'unauthorized') ? 403 : 422,
+                ),
+                $e instanceof OrderReviewException => ApiResponse::error(
                     $e->getMessage(),
                     ['code' => $e->errorCode],
                     422,
