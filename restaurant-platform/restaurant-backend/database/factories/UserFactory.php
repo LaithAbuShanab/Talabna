@@ -34,6 +34,7 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
             'role' => UserRole::Customer,
+            'is_active' => true,
         ];
     }
 
@@ -47,10 +48,44 @@ class UserFactory extends Factory
         ]);
     }
 
+    /**
+     * A generic admin account — defaults to the most privileged role.
+     * Prefer the specific role states below when a test cares which one.
+     */
     public function admin(): static
     {
         return $this->state(fn (array $attributes) => [
-            'role' => UserRole::Admin,
+            'role' => UserRole::SuperAdmin,
         ]);
+    }
+
+    public function superAdmin(): static
+    {
+        return $this->state(fn (array $attributes) => ['role' => UserRole::SuperAdmin]);
+    }
+
+    public function manager(): static
+    {
+        return $this->state(fn (array $attributes) => ['role' => UserRole::Manager]);
+    }
+
+    public function kitchen(): static
+    {
+        return $this->state(fn (array $attributes) => ['role' => UserRole::Kitchen]);
+    }
+
+    public function cashier(): static
+    {
+        return $this->state(fn (array $attributes) => ['role' => UserRole::Cashier]);
+    }
+
+    public function support(): static
+    {
+        return $this->state(fn (array $attributes) => ['role' => UserRole::Support]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => ['is_active' => false]);
     }
 }

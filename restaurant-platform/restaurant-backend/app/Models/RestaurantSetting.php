@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 #[Fillable([
     'restaurant_name',
+    'logo_path',
     'phone',
     'email',
     'address',

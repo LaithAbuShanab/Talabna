@@ -13,8 +13,13 @@ use App\Models\User;
  * App\Services\OrderStatusTransitionService. Kept as named abilities that
  * mirror the domain language exactly ("special permission",
  * "very special permission") rather than one generic check, so each one
- * can be tightened independently later (e.g. if a "manager" role is ever
- * introduced) without touching the transition service itself.
+ * can be tightened independently without touching the transition service
+ * itself. Now that the admin role space is split into
+ * super_admin/manager/kitchen/cashier/support (see docs/ADMIN_PANEL.md),
+ * each ability lists exactly which of those may perform it — this is the
+ * fine-grained half of "not just hiding buttons": even if a kitchen-role
+ * user somehow reached a "cancel out-for-delivery" action, this policy
+ * would still refuse it server-side.
  */
 class OrderPolicy
 {
@@ -44,32 +49,32 @@ class OrderPolicy
     /**
      * The baseline ability to run the restaurant side of the lifecycle:
      * accept, reject, prepare, mark ready, dispatch for delivery, mark
-     * delivered, and cancel up through "preparing".
+     * delivered, and cancel up through "preparing". Kitchen staff need
+     * this for the day-to-day accept/prepare/ready/dispatch flow; cashier
+     * and support do not change order status.
      */
     public function manage(User $user, Order $order): bool
     {
-        return $user->role === UserRole::Admin;
+        return in_array($user->role, [UserRole::SuperAdmin, UserRole::Manager, UserRole::Kitchen], true);
     }
 
     /**
      * "Special permission": cancelling an order that's already "ready" —
-     * food may already be made. Currently admin-only, same as manage(),
-     * but named and checked separately on purpose (see class docblock).
+     * food may already be made, so this is deliberately tighter than
+     * manage() and excludes kitchen staff.
      */
     public function cancelAtReadyStage(User $user, Order $order): bool
     {
-        return $user->role === UserRole::Admin;
+        return in_array($user->role, [UserRole::SuperAdmin, UserRole::Manager], true);
     }
 
     /**
      * "Very special permission": cancelling an order that's already out
-     * for delivery — the highest-risk cancellation in the lifecycle.
-     * Currently the same admin-only check as the others, kept as its own
-     * named ability so it can be restricted further without touching
-     * OrderStatusTransitionService.
+     * for delivery — the highest-risk cancellation in the lifecycle,
+     * restricted to super_admin only.
      */
     public function cancelAtOutForDeliveryStage(User $user, Order $order): bool
     {
-        return $user->role === UserRole::Admin;
+        return $user->role === UserRole::SuperAdmin;
     }
 }

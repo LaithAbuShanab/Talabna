@@ -36,17 +36,21 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,
+            'is_active' => 'boolean',
         ];
     }
 
     /**
-     * Only "admin" role users may log into the Filament admin panel — the
-     * same users table also holds ordinary customers (see docs/DATABASE_SCHEMA.md),
-     * so without this check any customer could otherwise sign into /admin.
+     * Only administrative roles (anything but "customer" — see
+     * UserRole::isAdmin()) may log into the Filament admin panel, and only
+     * while still active — the same users table also holds ordinary
+     * customers (see docs/DATABASE_SCHEMA.md), so without this check any
+     * customer could otherwise sign into /admin, and a deactivated staff
+     * account could keep logging in indefinitely.
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->role === UserRole::Admin;
+        return $this->role->isAdmin() && $this->is_active;
     }
 
     public function addresses(): HasMany

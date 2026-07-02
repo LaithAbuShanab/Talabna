@@ -78,33 +78,44 @@ class OrderPolicyTest extends TestCase
         $this->assertFalse($this->policy->cancelAsCustomer($customer, $order));
     }
 
-    public function test_only_admin_can_manage_an_order(): void
+    public function test_super_admin_manager_and_kitchen_can_manage_an_order(): void
     {
-        $admin = $this->makeUser(UserRole::Admin);
-        $customer = $this->makeUser(UserRole::Customer);
         $order = $this->makeOrder(OrderStatus::Pending);
 
-        $this->assertTrue($this->policy->manage($admin, $order));
-        $this->assertFalse($this->policy->manage($customer, $order));
+        foreach ([UserRole::SuperAdmin, UserRole::Manager, UserRole::Kitchen] as $role) {
+            $this->assertTrue($this->policy->manage($this->makeUser($role), $order), "{$role->value} should be able to manage an order");
+        }
     }
 
-    public function test_only_admin_can_cancel_at_ready_stage(): void
+    public function test_cashier_support_and_customer_cannot_manage_an_order(): void
     {
-        $admin = $this->makeUser(UserRole::Admin);
-        $customer = $this->makeUser(UserRole::Customer);
+        $order = $this->makeOrder(OrderStatus::Pending);
+
+        foreach ([UserRole::Cashier, UserRole::Support, UserRole::Customer] as $role) {
+            $this->assertFalse($this->policy->manage($this->makeUser($role), $order), "{$role->value} should not be able to manage an order");
+        }
+    }
+
+    public function test_only_super_admin_and_manager_can_cancel_at_ready_stage(): void
+    {
         $order = $this->makeOrder(OrderStatus::Ready);
 
-        $this->assertTrue($this->policy->cancelAtReadyStage($admin, $order));
-        $this->assertFalse($this->policy->cancelAtReadyStage($customer, $order));
+        $this->assertTrue($this->policy->cancelAtReadyStage($this->makeUser(UserRole::SuperAdmin), $order));
+        $this->assertTrue($this->policy->cancelAtReadyStage($this->makeUser(UserRole::Manager), $order));
+
+        foreach ([UserRole::Kitchen, UserRole::Cashier, UserRole::Support, UserRole::Customer] as $role) {
+            $this->assertFalse($this->policy->cancelAtReadyStage($this->makeUser($role), $order), "{$role->value} should not be able to cancel at the ready stage");
+        }
     }
 
-    public function test_only_admin_can_cancel_at_out_for_delivery_stage(): void
+    public function test_only_super_admin_can_cancel_at_out_for_delivery_stage(): void
     {
-        $admin = $this->makeUser(UserRole::Admin);
-        $customer = $this->makeUser(UserRole::Customer);
         $order = $this->makeOrder(OrderStatus::OutForDelivery);
 
-        $this->assertTrue($this->policy->cancelAtOutForDeliveryStage($admin, $order));
-        $this->assertFalse($this->policy->cancelAtOutForDeliveryStage($customer, $order));
+        $this->assertTrue($this->policy->cancelAtOutForDeliveryStage($this->makeUser(UserRole::SuperAdmin), $order));
+
+        foreach ([UserRole::Manager, UserRole::Kitchen, UserRole::Cashier, UserRole::Support, UserRole::Customer] as $role) {
+            $this->assertFalse($this->policy->cancelAtOutForDeliveryStage($this->makeUser($role), $order), "{$role->value} should not be able to cancel at the out-for-delivery stage");
+        }
     }
 }

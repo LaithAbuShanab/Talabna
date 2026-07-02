@@ -5,9 +5,121 @@ unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
 transition system, the versioned Sanctum-based auth/account API, the
-public menu/catalog API, then the protected customer order endpoints.
+public menu/catalog API, the protected customer order endpoints, then the
+professional Filament v5 admin panel (roles, policies, audit trail).
 
-## Protected customer order endpoints (this task)
+## Filament v5 admin panel (this task)
+
+`restaurant-backend` only. Full detail — the role matrix, every policy,
+navigation groups, audit trail wiring, and the "why not a permissions
+package" reasoning — is in the new **`docs/ADMIN_PANEL.md`**; this section
+is a pointer/summary plus the real bugs this task caught.
+
+- **Roles**: `App\Enums\UserRole`'s old single `admin` case split into
+  five — `super_admin`, `manager`, `kitchen`, `cashier`, `support` (plus
+  the pre-existing `customer`, still the only non-admin role —
+  `isAdmin()`). New `users.is_active` column (default `true`) lets an
+  admin account be deactivated without deleting it.
+  `canAccessPanel()` now requires `role->isAdmin() && is_active`.
+  `AdminUserSeeder` now creates one demo account per admin role
+  (`admin@`/`manager@`/`kitchen@`/`cashier@`/`support@example.com`, same
+  dev-only `password` placeholder).
+- **Fine-grained policies, not button-hiding**: `OrderPolicy`'s three
+  admin abilities re-tiered from "any admin" to a real matrix (`manage`:
+  super_admin/manager/kitchen; `cancelAtReadyStage`: super_admin/manager;
+  `cancelAtOutForDeliveryStage`: super_admin only). Three new policies —
+  `UserPolicy` (managing admin accounts: super_admin only for
+  create/update/delete, manager can view; never delete yourself),
+  `RestaurantSettingPolicy`, `AdminActivityLogPolicy` (read-only,
+  unconditionally denies create/update/delete) — all auto-discovered by
+  Laravel's naming convention, all enforced server-side and proven so over
+  real HTTP (403s asserted directly, not button visibility).
+- **Decision, explicitly checked rather than assumed**: no permissions
+  package added. `bezhansalleh/filament-shield` (wrapping
+  `spatie/laravel-permission`) was checked against the real Packagist
+  registry and **does** already declare Filament v5 support — so this
+  wasn't a compatibility rejection. Skipped because the role set is fixed
+  and small (no admin-configurable custom roles requested), and adopting
+  it would mean replacing the single `role` enum column already used
+  directly by `CartPricingService`/`OrderStatusTransitionService`/every
+  customer API endpoint — a much bigger, riskier change than "prepare the
+  panel." Plain Policies give the same enforcement guarantee for this
+  fixed role set with zero new tables/dependencies.
+- **Navigation groups**: new `App\Filament\Support\NavigationGroup` enum
+  (9 cases: Dashboard/Orders/Menu/Customers/Promotions/Delivery/Reports/
+  Settings/Administration), passed straight to `Panel::navigationGroups()`
+  via Filament v5's native enum-class-string support
+  (`NavigationGroup::fromEnum()`). Only Administration (`UserResource`,
+  `AdminActivityLogResource`) and Settings (`ManageRestaurantSettings`)
+  have Resources/Pages yet — full CRUD for Orders/Menu/Customers/
+  Promotions/Delivery/Reports is explicitly out of scope for this task
+  (panel infrastructure + a proof of the RBAC, not "build every domain
+  resource") and remains future work, same as already flagged in this
+  file's own backlog.
+- **Branding/RTL/profile/notifications, all native Filament v5 APIs, no
+  custom pages beyond what the task needed**: `->brandName()`/
+  `->brandLogo()` are Closures reading `RestaurantSetting::current()`
+  (new `logo_path` column), so editing them on the new Settings page
+  updates the panel immediately. RTL/Arabic needed **zero new code** —
+  Filament ships Arabic translations for every sub-package and derives
+  `dir="rtl"` from the `ar` locale's own translation string, and
+  `APP_LOCALE=ar` was already this project's default from an earlier task.
+  `->profile(isSimple: false)` uses Filament's **built-in**
+  `Filament\Auth\Pages\EditProfile` (already has name/email/password/
+  current-password) — no custom profile page was written.
+  `->databaseNotifications()` enabled (new `notifications` table
+  migration — none existed before, nothing had sent one yet).
+- **New, deliberately simple audit trail**: `admin_activity_logs`
+  (append-only, same enforcement pattern as the existing
+  `OrderStatusHistory`), `App\Services\AdminActivityLogger`, wired into
+  three curated call sites — staff-made order status changes
+  (`App\Listeners\LogAdminOrderStatusChange` on the existing
+  `OrderStatusChanged` event, skipping customer/null-actor transitions),
+  admin account create/update(role or is_active only)/delete, and
+  settings updates. Viewable read-only at Administration → Activity Log.
+- **Three real bugs found by testing, not by reading the code**:
+  1. `NavigationGroup` originally implemented `HasIcon` as well as
+     `HasLabel`; combined with every Resource/Page also setting its own
+     icon, Filament hard-refuses this ("group or its items can have icons,
+     but not both") — a `500` on every page in an affected group. Caught
+     by an HTTP-level probe (`actingAs($admin)->get('/admin')`) before the
+     real test suite was even written. Fixed by dropping `HasIcon` from
+     the group enum.
+  2. `role`/`is_active` are excluded from `User`'s `#[Fillable(...)]` (the
+     existing privilege-escalation guard) — so Filament's default
+     `CreateRecord`/`EditRecord` save methods (`new Model($data)` /
+     `$record->update($data)`, both mass assignment) would have silently
+     dropped both fields. Same failure shape as the `AuthController::register()`
+     bug found in the earlier auth-API task; applied that lesson
+     proactively via `handleRecordCreation()`/`handleRecordUpdate()`
+     overrides using `forceFill()`, then verified with Livewire component
+     tests that actually fill the form and call `create`/`save` (not just
+     "the page loads").
+  3. The already-seeded `admin@example.com` row (real local MySQL data)
+     was still `role = 'admin'` — a value no longer in the enum, so every
+     read would throw a `ValueError`. Fixed with a dedicated data migration
+     (`migrate_legacy_admin_role_to_super_admin`, reversible), run and
+     verified against the real database before writing any tests.
+- **Tests**: `tests/Feature/Filament/{PanelAccessTest, UserResourceAccessTest,
+  UserResourceCrudTest, RestaurantSettingsPageTest,
+  AdminActivityLogResourceAccessTest}`, `tests/Unit/Policies/{UserPolicyTest,
+  RestaurantSettingPolicyTest, AdminActivityLogPolicyTest}` (+ the existing
+  `OrderPolicyTest` extended for the new matrix),
+  `tests/Feature/Services/AdminActivityLoggerTest`,
+  `tests/Feature/Listeners/LogAdminOrderStatusChangeTest` — 42 new tests:
+  every admin role logging in, customer/deactivated-admin exclusion, RTL/
+  Arabic/branding rendering, every Resource/Page's authorization matrix
+  over real HTTP, the mass-assignment fix specifically, self-delete
+  prevention, and the audit trail recording (or correctly not recording)
+  per wired event.
+- Full backend suite: **341 tests / 927 assertions** (up from 299/819),
+  Pint clean (one pre-existing generated file missing
+  `declare(strict_types=1)`, auto-fixed), stable across 3 repeated runs,
+  verified against the real local MySQL `Talabna` database end-to-end —
+  all 5 demo accounts' `canAccessPanel()` confirmed live via `tinker`
+  after the legacy-role data migration ran.
+
+## Protected customer order endpoints (previous task)
 
 `restaurant-backend` only. Full endpoint-by-endpoint detail is in the new
 **`docs/API_ORDERS.md`**; this section is a pointer/summary.

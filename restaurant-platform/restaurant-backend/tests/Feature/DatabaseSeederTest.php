@@ -36,7 +36,7 @@ class DatabaseSeederTest extends TestCase
         $this->assertGreaterThanOrEqual(15, Product::query()->count());
         $this->assertGreaterThanOrEqual(4, OptionGroup::query()->count());
         $this->assertGreaterThanOrEqual(2, DeliveryZone::query()->count());
-        $this->assertTrue(User::query()->where('role', UserRole::Admin)->exists());
+        $this->assertTrue(User::query()->where('role', UserRole::SuperAdmin)->exists());
     }
 
     public function test_every_product_has_a_local_placeholder_image(): void
@@ -76,8 +76,21 @@ class DatabaseSeederTest extends TestCase
 
         $admin = User::query()->where('email', 'admin@example.com')->firstOrFail();
 
-        $this->assertSame(UserRole::Admin, $admin->role);
+        $this->assertSame(UserRole::SuperAdmin, $admin->role);
+        $this->assertTrue($admin->is_active);
         $this->assertTrue(Hash::check('password', $admin->password));
+    }
+
+    public function test_seeds_one_demo_account_per_admin_role(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        foreach (UserRole::adminCases() as $role) {
+            $this->assertTrue(
+                User::query()->where('role', $role)->exists(),
+                "No seeded demo account has role {$role->value}"
+            );
+        }
     }
 
     public function test_demo_customers_have_addresses(): void
