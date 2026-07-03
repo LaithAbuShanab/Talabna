@@ -142,13 +142,22 @@ $order = $service->transition($order, new \App\DataTransferObjects\Order\Transit
 
 ## What's deliberately not here
 
-- No HTTP endpoint or Filament action calls this service yet — it's the use
-  case itself, callable directly, following the same pattern as
-  `App\Actions\CreateOrderAction` (see `docs/DATABASE_SCHEMA.md` "Order
-  creation"). Wiring it to `/admin` and a customer-facing "cancel my order"
-  endpoint is future work.
 - No scheduled/automated transitions exist yet (e.g. auto-cancelling a
   `pending` order after N minutes with no admin action) — the `null` actor
   path exists for this, but nothing calls it today.
-- No granular roles beyond `customer`/`admin` — see "Who can do what" above
-  for how that would slot in without touching this service.
+
+## Now wired to the admin panel
+
+The customer-facing `POST /api/v1/orders/{order}/cancel` endpoint and the
+Filament admin Orders screen
+(`App\Filament\Resources\Orders\Actions\OrderStatusActions`,
+`docs/ADMIN_ORDERS.md`) both call this service directly — no bypass of any
+of the rules above exists on either path. The role matrix in "Who can do
+what" is no longer aspirational either: `App\Enums\UserRole` has five real
+admin roles (`super_admin`/`manager`/`kitchen`/`cashier`/`support`, see
+`docs/ADMIN_PANEL.md`), and `manage()`/`cancelAtReadyStage()`/
+`cancelAtOutForDeliveryStage()` in `App\Policies\OrderPolicy` check them
+exactly as described above (kitchen can run the day-to-day flow but not the
+two "special permission" cancellations; only `super_admin`/`manager` can
+cancel a `ready` order; only `super_admin` can cancel an
+`out_for_delivery` order).

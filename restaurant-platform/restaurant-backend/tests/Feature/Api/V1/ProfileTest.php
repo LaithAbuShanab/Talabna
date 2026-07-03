@@ -34,6 +34,17 @@ class ProfileTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $user->id, 'email' => 'new-email@example.com']);
     }
 
+    public function test_authenticated_user_can_set_their_phone_number(): void
+    {
+        $user = User::factory()->create(['phone' => null]);
+
+        $this->actingAs($user)->putJson('/api/v1/profile', [
+            'phone' => '+962790000000',
+        ])->assertOk()->assertJsonPath('data.phone', '+962790000000');
+
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'phone' => '+962790000000']);
+    }
+
     public function test_profile_update_rejects_an_email_already_used_by_another_user(): void
     {
         User::factory()->create(['email' => 'taken@example.com']);

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
-enum OrderStatus: string
+use Filament\Support\Contracts\HasColor;
+use Filament\Support\Contracts\HasLabel;
+
+enum OrderStatus: string implements HasColor, HasLabel
 {
     case Pending = 'pending';
     case Accepted = 'accepted';
@@ -14,6 +17,38 @@ enum OrderStatus: string
     case Delivered = 'delivered';
     case Cancelled = 'cancelled';
     case Rejected = 'rejected';
+
+    /**
+     * Labels/colors for the admin Orders screen (docs/ADMIN_ORDERS.md) only
+     * — the public API always renders `status->value`, never these. Pending
+     * is deliberately `warning` (amber): it's the "needs action" state, the
+     * visual cue for a "new" order on the list.
+     */
+    public function getLabel(): string
+    {
+        return match ($this) {
+            self::Pending => 'Pending',
+            self::Accepted => 'Accepted',
+            self::Preparing => 'Preparing',
+            self::Ready => 'Ready',
+            self::OutForDelivery => 'Out for delivery',
+            self::Delivered => 'Delivered',
+            self::Cancelled => 'Cancelled',
+            self::Rejected => 'Rejected',
+        };
+    }
+
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::Pending => 'warning',
+            self::Accepted => 'info',
+            self::Preparing => 'gray',
+            self::Ready => 'primary',
+            self::OutForDelivery, self::Delivered => 'success',
+            self::Cancelled, self::Rejected => 'danger',
+        };
+    }
 
     /**
      * The order lifecycle graph: which statuses each status may legally move

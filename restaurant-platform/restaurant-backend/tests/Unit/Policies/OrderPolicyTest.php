@@ -46,6 +46,47 @@ class OrderPolicyTest extends TestCase
         return $order;
     }
 
+    public function test_every_admin_role_can_view_the_orders_list(): void
+    {
+        foreach ([UserRole::SuperAdmin, UserRole::Manager, UserRole::Kitchen, UserRole::Cashier, UserRole::Support] as $role) {
+            $this->assertTrue($this->policy->viewAny($this->makeUser($role)), "{$role->value} should be able to view the orders list");
+        }
+    }
+
+    public function test_a_customer_cannot_view_the_orders_list(): void
+    {
+        $this->assertFalse($this->policy->viewAny($this->makeUser(UserRole::Customer)));
+    }
+
+    public function test_any_admin_role_can_view_any_order(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, userId: 999);
+
+        foreach ([UserRole::SuperAdmin, UserRole::Manager, UserRole::Kitchen, UserRole::Cashier, UserRole::Support] as $role) {
+            $this->assertTrue($this->policy->view($this->makeUser($role, id: 1), $order), "{$role->value} should be able to view any order");
+        }
+    }
+
+    public function test_a_customer_can_view_only_their_own_order(): void
+    {
+        $customer = $this->makeUser(UserRole::Customer, id: 5);
+
+        $this->assertTrue($this->policy->view($customer, $this->makeOrder(OrderStatus::Pending, userId: 5)));
+        $this->assertFalse($this->policy->view($customer, $this->makeOrder(OrderStatus::Pending, userId: 999)));
+    }
+
+    public function test_orders_are_never_created_updated_or_deleted_through_filament_crud(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending);
+
+        foreach ([UserRole::SuperAdmin, UserRole::Manager, UserRole::Kitchen, UserRole::Cashier, UserRole::Support, UserRole::Customer] as $role) {
+            $user = $this->makeUser($role);
+            $this->assertFalse($this->policy->create($user), "{$role->value} should never create an order via CRUD");
+            $this->assertFalse($this->policy->update($user, $order), "{$role->value} should never update an order via CRUD");
+            $this->assertFalse($this->policy->delete($user, $order), "{$role->value} should never delete an order");
+        }
+    }
+
     public function test_customer_can_cancel_their_own_pending_order(): void
     {
         $customer = $this->makeUser(UserRole::Customer, id: 5);

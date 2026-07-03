@@ -24,9 +24,24 @@ use App\Models\User;
 class OrderPolicy
 {
     /**
-     * Bare ownership check — used by the read-only customer endpoints
-     * (show/timeline/reorder-preview/review) in
-     * App\Http\Controllers\Api\V1\{OrderController, OrderReviewController}.
+     * Guards App\Filament\Resources\Orders\OrderResource's list page — every
+     * admin role can view the Orders screen (kitchen runs the day-to-day
+     * accept/prepare/ready/dispatch flow, cashier reconciles payment status,
+     * support looks up orders to help customers); only `manage()` and the
+     * two cancellation abilities below actually gate *changing* anything.
+     */
+    public function viewAny(User $user): bool
+    {
+        return $user->role->isAdmin();
+    }
+
+    /**
+     * Bare ownership-or-staff check. Used by the read-only customer
+     * endpoints (show/timeline/reorder-preview/review) in
+     * App\Http\Controllers\Api\V1\{OrderController, OrderReviewController}
+     * — where it's pure ownership, since no customer request carries an
+     * admin role — and by App\Filament\Resources\Orders\OrderResource's
+     * view page, where the admin-role branch is what actually matters.
      * Deliberately separate from cancelAsCustomer(): a wrong-status
      * cancellation attempt on the customer's *own* order should fail with
      * a specific "can't cancel at this stage" business error, not get
@@ -34,7 +49,30 @@ class OrderPolicy
      */
     public function view(User $user, Order $order): bool
     {
-        return $user->id === $order->user_id;
+        return $user->role->isAdmin() || $user->id === $order->user_id;
+    }
+
+    /**
+     * Orders are never created, edited, or deleted through Filament CRUD —
+     * only through checkout (App\Actions\CreateOrderAction) and status
+     * transitions (App\Services\OrderStatusTransitionService, guarded by
+     * manage()/cancelAtReadyStage()/cancelAtOutForDeliveryStage() below).
+     * Unconditional denials, not just omitted buttons/routes — see
+     * docs/ADMIN_ORDERS.md.
+     */
+    public function create(User $user): bool
+    {
+        return false;
+    }
+
+    public function update(User $user, Order $order): bool
+    {
+        return false;
+    }
+
+    public function delete(User $user, Order $order): bool
+    {
+        return false;
     }
 
     /**

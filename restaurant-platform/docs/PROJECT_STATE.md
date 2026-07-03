@@ -1,16 +1,91 @@
 # Project State
 
-Last updated: 2026-07-02 — initial scaffolding, local MySQL switch + GitHub push,
+Last updated: 2026-07-03 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
 transition system, the versioned Sanctum-based auth/account API, the
 public menu/catalog API, the protected customer order endpoints, the
-professional Filament v5 admin panel (roles, policies, audit trail), then
-the Filament v5 admin Resources for the menu catalog itself (Category,
-Product, ProductImage, OptionGroup, OptionValue).
+professional Filament v5 admin panel (roles, policies, audit trail), the
+Filament v5 admin Resources for the menu catalog itself (Category, Product,
+ProductImage, OptionGroup, OptionValue), then the Filament v5 admin Orders
+screen wiring `OrderStatusTransitionService` to the panel for the first
+time.
 
-## Filament v5 admin menu Resources (this task)
+## Filament v5 admin Orders screen (this task)
+
+`restaurant-backend` only. Full detail — every column/filter, every status
+action's exact permission tier, the printable-receipt design, and why
+sound alerts were deliberately skipped — is in the new
+**`docs/ADMIN_ORDERS.md`**; this section is a pointer/summary.
+
+- **`App\Filament\Resources\Orders\OrderResource`**: a fast list + detail
+  pair under the pre-existing **Orders** navigation group, with
+  deliberately **no `form()`, no `create`/`edit` route** at all (not hidden
+  buttons — an absent capability), since an order's items/prices are fixed
+  forever at checkout. `App\Policies\OrderPolicy` gained `viewAny()` (every
+  admin role) and `create()`/`update()`/`delete()` (unconditionally
+  `false`) as the server-side backstop; `view()` now also allows any admin
+  role (previously ownership-only, still preserved for the customer API).
+- **List page**: order #/customer/type/total/payment method+status/order
+  status/relative "placed" time/expected time, all the requested filters
+  (status, payment status, payment method, delivery type, a date-placed
+  range) and search (order number, customer name, **and phone** — see
+  below), `->defaultSort('created_at', 'desc')`, and `->poll('15s')` for
+  auto-refresh — Filament's own built-in table polling, no custom JS.
+- **New/late highlighting**: the Pending status badge's own `warning`
+  color for "needs action," plus a dedicated computed overdue `IconColumn`
+  — deliberately *not* `Table::recordClasses()` (whole-row background
+  highlighting), since that would need a custom CSS asset pipeline this
+  admin panel doesn't have wired up and couldn't be verified rendering
+  correctly in this environment (see docs for the full reasoning).
+- **`App\Filament\Resources\Orders\Actions\OrderStatusActions`**: one
+  factory per lifecycle move (accept/reject/start preparing/mark ready/out
+  for delivery/mark delivered/cancel), shared between the list's row
+  actions and the detail page's header actions. Every one calls
+  `OrderStatusTransitionService::transition()` — never assigns `status`
+  directly — and its `->visible()` mirrors the exact same
+  `Gate::allows(...)` check the service itself makes internally, so the
+  button and the real enforcement can't drift apart. `accept` collects a
+  required estimated-prep-time; `reject`/`cancel` collect a required
+  reason; all seven require confirmation.
+- **Order detail page**: a read-only Infolist (customer info, the delivery
+  address snapshot, items with nested selected options, a full financial
+  breakdown — including a *derived* tax line, since `orders` never stored
+  one separately — notes, the full status-history timeline, and every
+  payment row), plus a **Print** action.
+- **Printable receipt**: `GET /admin/orders/{order}/print` → a plain Blade
+  view (no Filament/app layout — a thermal-printer receipt can't carry a
+  sidebar), `@page { size: 80mm auto; }`, `window.print()` — no external
+  printing service integrated, matching the task's explicit scope.
+- **Sound alerts deliberately skipped**: the task allowed this, and
+  explicitly said not to implement it if it can't be done reliably —
+  reliably playing a sound exactly once per new order (not on every poll,
+  surviving browser autoplay restrictions) can't be verified in an
+  environment with no real browser to test in. The Pending badge's color
+  already covers the same "something needs attention" signal visually.
+- **Real gap found, not a bug**: neither `users` nor `customer_addresses`
+  had ever stored a phone number — the search/customer-info requirements
+  surfaced this. Added a nullable `users.phone` column, wired into the
+  existing profile-update endpoint so it's actually settable (asked the
+  user to confirm this approach before touching schema/API surface outside
+  the literal ask).
+- **Tests**: `tests/Feature/Filament/{OrderResourceAccessTest,
+  OrderStatusActionsTest}`, `tests/Feature/Admin/OrderPrintControllerTest`,
+  plus the extended `tests/Unit/Policies/OrderPolicyTest` — 41 new tests:
+  the full access matrix, search/filters/sort, every action's happy path
+  and exact permission tier (including the pickup-only shortcut and the two
+  cancellation tiers), validation, a terminal order offering no further
+  actions, a forced Livewire call proving the visibility check isn't the
+  only enforcement (Kitchen forcing `cancel` on an `out_for_delivery` order
+  still fails service-side), and the print page's content/authorization.
+- Full backend suite: **435 tests / 1447 assertions** (up from 394/1197),
+  Pint clean, stable, verified against the real local MySQL `Talabna`
+  database (migration applied; probed the index/view/print pages and a
+  full accept-with-estimated-time transition against real seeded orders
+  before writing the permanent suite).
+
+## Filament v5 admin menu Resources (previous task)
 
 `restaurant-backend` only. Full detail — every field, every real bug found,
 the money major/minor-unit form pattern, the dual Resource/RelationManager
