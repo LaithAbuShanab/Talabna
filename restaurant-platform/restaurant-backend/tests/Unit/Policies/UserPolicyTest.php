@@ -70,4 +70,26 @@ class UserPolicyTest extends TestCase
 
         $this->assertFalse($this->policy->delete($superAdmin, $superAdmin));
     }
+
+    public function test_super_admin_and_manager_can_block_and_unblock_a_customer(): void
+    {
+        $customer = $this->makeUser(UserRole::Customer, id: 2);
+
+        foreach ([UserRole::SuperAdmin, UserRole::Manager] as $role) {
+            $admin = $this->makeUser($role);
+            $this->assertTrue($this->policy->block($admin, $customer), "{$role->value} should be able to block a customer");
+            $this->assertTrue($this->policy->unblock($admin, $customer), "{$role->value} should be able to unblock a customer");
+        }
+    }
+
+    public function test_kitchen_cashier_and_support_cannot_block_or_unblock_a_customer(): void
+    {
+        $customer = $this->makeUser(UserRole::Customer, id: 2);
+
+        foreach ([UserRole::Kitchen, UserRole::Cashier, UserRole::Support] as $role) {
+            $admin = $this->makeUser($role);
+            $this->assertFalse($this->policy->block($admin, $customer), "{$role->value} should not be able to block a customer");
+            $this->assertFalse($this->policy->unblock($admin, $customer), "{$role->value} should not be able to unblock a customer");
+        }
+    }
 }

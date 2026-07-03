@@ -53,6 +53,17 @@ class AuthController extends Controller
             ]);
         }
 
+        // Checked after the password succeeds — the customer already proved
+        // they own these credentials, so telling them plainly that their
+        // account is blocked (rather than a generic "invalid credentials")
+        // isn't an enumeration risk, and is far more useful to them. See
+        // App\Services\CustomerBlockingService/docs/ADMIN_CUSTOMERS.md.
+        if ($user->isBlocked()) {
+            throw ValidationException::withMessages([
+                'email' => [trans('auth.account_blocked')],
+            ]);
+        }
+
         $token = $user->createToken($data['device_name'])->plainTextToken;
 
         return ApiResponse::success([

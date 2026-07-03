@@ -621,6 +621,96 @@ class CartPricingServiceTest extends TestCase
         $this->assertSame(100, $result->discountAmount);
     }
 
+    // --- Coupon category/product restriction -------------------------------------------------
+
+    public function test_a_restricted_coupon_applies_when_the_cart_has_an_eligible_category_item(): void
+    {
+        $category = Category::factory()->create(['is_active' => true]);
+        $product = $this->makeAvailableProduct(['category_id' => $category->id, 'price_amount' => 2000]);
+        $coupon = Coupon::factory()->create(['code' => 'CATONLY', 'type' => CouponType::Percentage, 'value' => 50, 'min_order_amount' => null, 'max_discount_amount' => null]);
+        $coupon->categories()->attach($category->id);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+            couponCode: 'CATONLY',
+        ));
+
+        $this->assertSame(1000, $result->discountAmount);
+    }
+
+    public function test_a_restricted_coupon_applies_when_the_cart_has_an_eligible_product_item(): void
+    {
+        $product = $this->makeAvailableProduct(['price_amount' => 2000]);
+        $coupon = Coupon::factory()->create(['code' => 'PRODONLY', 'type' => CouponType::FixedAmount, 'value' => 300, 'min_order_amount' => null]);
+        $coupon->products()->attach($product->id);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+            couponCode: 'PRODONLY',
+        ));
+
+        $this->assertSame(300, $result->discountAmount);
+    }
+
+    public function test_a_restricted_coupons_discount_only_covers_eligible_items_not_the_whole_cart(): void
+    {
+        $eligibleCategory = Category::factory()->create(['is_active' => true]);
+        $eligibleProduct = $this->makeAvailableProduct(['category_id' => $eligibleCategory->id, 'price_amount' => 2000]);
+        $ineligibleProduct = $this->makeAvailableProduct(['price_amount' => 3000]);
+        $coupon = Coupon::factory()->create(['code' => 'CATONLY', 'type' => CouponType::Percentage, 'value' => 50, 'min_order_amount' => null, 'max_discount_amount' => null]);
+        $coupon->categories()->attach($eligibleCategory->id);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [
+                new CartItemInputData(productId: $eligibleProduct->id, quantity: 1),
+                new CartItemInputData(productId: $ineligibleProduct->id, quantity: 1),
+            ],
+            deliveryType: DeliveryType::Pickup,
+            couponCode: 'CATONLY',
+        ));
+
+        $this->assertSame(5000, $result->itemsSubtotalAmount);
+        // 50% of the eligible 2000 only — never 50% of the full 5000 cart.
+        $this->assertSame(1000, $result->discountAmount);
+    }
+
+    public function test_a_restricted_coupon_is_rejected_when_the_cart_has_no_eligible_item(): void
+    {
+        $restrictedCategory = Category::factory()->create(['is_active' => true]);
+        $product = $this->makeAvailableProduct();
+        $coupon = Coupon::factory()->create(['code' => 'CATONLY', 'min_order_amount' => null]);
+        $coupon->categories()->attach($restrictedCategory->id);
+
+        try {
+            $this->service->price(new CartPricingRequestData(
+                items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+                deliveryType: DeliveryType::Pickup,
+                couponCode: 'CATONLY',
+            ));
+            $this->fail('Expected CartPricingException was not thrown.');
+        } catch (CartPricingException $e) {
+            $this->assertSame('coupon_not_applicable', $e->errorCode);
+        }
+    }
+
+    public function test_a_coupon_with_no_restrictions_still_applies_cart_wide(): void
+    {
+        $product = $this->makeAvailableProduct(['price_amount' => 1000]);
+        $coupon = Coupon::factory()->create(['code' => 'GLOBAL', 'type' => CouponType::Percentage, 'value' => 10, 'min_order_amount' => null, 'max_discount_amount' => null]);
+
+        $this->assertFalse($coupon->isRestricted());
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+            couponCode: 'GLOBAL',
+        ));
+
+        $this->assertSame(100, $result->discountAmount);
+    }
+
     // --- Tax -------------------------------------------------
 
     public function test_it_computes_tax_when_enabled_in_restaurant_settings(): void

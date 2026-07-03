@@ -25,5 +25,6 @@ return [
     'logged_out_all' => 'Logged out from all devices successfully.',
     'profile_updated' => 'Profile updated successfully.',
     'password_changed' => 'Password changed successfully.',
+    'account_blocked' => 'This account has been blocked. Please contact support for more information.',
 
 ];

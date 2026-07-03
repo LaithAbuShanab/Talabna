@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-07-03 — initial scaffolding, local MySQL switch + GitHub push,
+Last updated: 2026-07-04 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
@@ -8,11 +8,102 @@ transition system, the versioned Sanctum-based auth/account API, the
 public menu/catalog API, the protected customer order endpoints, the
 professional Filament v5 admin panel (roles, policies, audit trail), the
 Filament v5 admin Resources for the menu catalog itself (Category, Product,
-ProductImage, OptionGroup, OptionValue), then the Filament v5 admin Orders
+ProductImage, OptionGroup, OptionValue), the Filament v5 admin Orders
 screen wiring `OrderStatusTransitionService` to the panel for the first
-time.
+time, then the Filament v5 admin Resources for customers, coupons,
+delivery zones, and business hours — the last of the panel's originally
+planned navigation groups.
 
-## Filament v5 admin Orders screen (this task)
+## Filament v5 admin Customers/Coupons/Delivery/Business-Hours Resources (this task)
+
+`restaurant-backend` only. Full detail — every field, the two real bugs
+found, and the enforcement decisions behind blocking/coupon-restriction/
+multi-period hours — is in three new docs:
+**`docs/ADMIN_CUSTOMERS.md`**, **`docs/ADMIN_COUPONS.md`**,
+**`docs/ADMIN_OPERATIONS.md`**; this section is a pointer/summary.
+
+- **Six Resources**: `Customers\CustomerResource` (view-only + block/
+  unblock), `CustomerAddresses\CustomerAddressResource` (read-mostly),
+  `Coupons\CouponResource` (full CRUD), `DeliveryZones\DeliveryZoneResource`
+  (full CRUD), `BusinessHours\BusinessHourResource` and
+  `BusinessHourExceptions\BusinessHourExceptionResource` (both full CRUD).
+- **A same-model, two-Resources authorization problem, solved properly**:
+  `CustomerResource` and the existing `Users\UserResource` both model
+  `App\Models\User`, but Laravel only registers one Policy per model
+  class. Rather than force one `viewAny`/`create`/`update`/`delete` tier
+  onto both very different use cases, `CustomerResource` overrides those
+  authorization methods directly on the Resource (bypassing Gate
+  resolution), while the two genuinely new named abilities — `block()`/
+  `unblock()` — were added onto the existing, singular `App\Policies\
+  UserPolicy` instead of a would-be-unreachable second policy class.
+- **Blocking a customer is real enforcement, not a cosmetic flag**: before
+  this task, `users.is_active` only ever gated *admin panel* login —
+  toggling it for a customer had zero effect anywhere. Now: `App\Services\
+  CustomerBlockingService` sets `is_active`/`blocked_reason` (both
+  excluded from `User`'s `#[Fillable]`, like `role`) and revokes every
+  Sanctum token immediately; `AuthController::login()` rejects a blocked
+  account after the password check; a new `ensure.active` middleware
+  (`App\Http\Middleware\EnsureAccountIsActive`) guards every other
+  authenticated customer route as defense in depth.
+- **Coupons can now be optionally restricted to specific categories/
+  products** (`coupon_categories`/`coupon_products` pivots) — enforced
+  inside `App\Services\CartPricingService::applyCoupon()`, not just
+  recorded for display: a restricted coupon only discounts the *eligible*
+  items' subtotal (never the whole cart) and is rejected outright if
+  nothing in the cart qualifies. `CartPricedItemData` gained a
+  `categoryId` field to make the eligibility check possible.
+- **Business hours now support more than one period per day**
+  (`business_hours.day_of_week`'s uniqueness was dropped) plus a new,
+  simple `business_hour_exceptions` table for holiday overrides.
+  `App\Services\RestaurantAvailabilityService::isOpenNow()` was rewritten
+  to check every period for today (open if inside *any* of them) and to
+  consult an exception for today first, before falling back to the
+  regular weekly schedule.
+- **The phone number gap** (from the previous Orders task) is now also
+  shown on `CustomerResource`/searchable, and delivery zones' coverage
+  area is a plain center-point + radius by explicit request, not a
+  polygon/map picker.
+- **Two real bugs found by testing, not by reading the code**:
+  1. Every `Get`-based conditional in `CouponForm` compared
+     `$get('type')` against `CouponType::X->value` (a string) — but a
+     `Select::make('type')->options(CouponType::class)`'s live state
+     actually resolves to the *enum case itself*. The `===` comparison
+     was therefore always false, silently taking the wrong branch: a
+     fixed-amount coupon's value got truncated instead of converted to
+     minor units, and a percentage coupon's `max_discount_amount` field
+     was wrongly treated as hidden and never saved. Fixed by comparing
+     against the enum case directly, confirmed by `Log::debug`-dumping
+     the actual runtime value before concluding the root cause.
+  2. `BusinessHourException.date` was cast `'date'` (Carbon), but
+     Eloquent's `date` cast reformats the value to a full
+     `"Y-m-d H:i:s"` string before writing it to the database, while
+     Filament's `->unique()` validation compares the *raw* `"Y-m-d"`
+     input against that reformatted stored value — the mismatch meant
+     the uniqueness check silently never matched, so a duplicate date
+     sailed past form validation and only surfaced as a raw SQL
+     exception. Fixed by leaving `date` uncast (nothing else needed it
+     as a `Carbon` instance).
+- **Tests**: 8 new/extended Feature test files across the six resources
+  plus `tests/Feature/Services/{CustomerBlockingServiceTest,
+  RestaurantAvailabilityServiceTest}`, `tests/Feature/Http/
+  EnsureAccountIsActiveTest`, five new cases in the existing
+  `CartPricingServiceTest`, a blocked-login case in the existing
+  `AuthTest`, and block/unblock cases in the existing `UserPolicyTest` —
+  76 new tests: the full access matrix per resource, validation
+  (including both real bugs' exact failure modes as regression tests),
+  block/unblock's full effect (account disabled, tokens revoked, activity
+  logged), the coupon-restriction math, multi-period/holiday-exception
+  availability logic, and that blocking actually works end to end
+  (login rejected, existing tokens rejected on every other route).
+- Full backend suite: **512 tests / 1716 assertions** (up from 436/1449),
+  Pint clean, stable, verified against the real local MySQL `Talabna`
+  database — every resource's query/transform logic exercised against
+  real seeded data, plus live (transaction-rolled-back) smoke tests of the
+  block/unblock flow, the coupon eligible-subset discount math, and the
+  multi-period/holiday-exception availability logic, all before the
+  permanent test suite was written.
+
+## Filament v5 admin Orders screen (previous task)
 
 `restaurant-backend` only. Full detail — every column/filter, every status
 action's exact permission tier, the printable-receipt design, and why

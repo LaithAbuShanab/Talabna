@@ -49,6 +49,10 @@ table** with a `role` string column (`UserRole`), not a separate
   Without this, **any** authenticated user — including a customer — could
   log into `/admin`, since Filament allows all authenticated users into a
   panel by default when no `FilamentUser` check is implemented.
+- `phone` (nullable, no uniqueness) and `blocked_reason` (nullable text)
+  were added later — see `docs/ADMIN_ORDERS.md`/`docs/ADMIN_CUSTOMERS.md`.
+  `blocked_reason` is excluded from `#[Fillable]` the same way `role` is
+  — only `App\Services\CustomerBlockingService` ever writes it.
 
 ### `customer_addresses`
 
@@ -90,11 +94,23 @@ decision has somewhere to live without another migration.
 
 ### `business_hours`
 
-One row per weekday (`day_of_week`: 0 = Sunday .. 6 = Saturday, matching
-Carbon's `dayOfWeek`), a single `opens_at`/`closes_at` shift per day, with
-`unique(day_of_week)`. Split shifts (e.g. separate lunch/dinner windows)
-would need a schema change (drop the uniqueness, add an ordering column) —
-out of scope for now, noted here so it's not a silent limitation.
+One or more rows per weekday (`day_of_week`: 0 = Sunday .. 6 = Saturday,
+matching Carbon's `dayOfWeek`), each an `opens_at`/`closes_at` shift.
+**Originally `unique(day_of_week)`** (exactly one shift per day) — a later
+task ("أكثر من فترة في اليوم إن لزم") dropped that uniqueness (replaced
+with a plain index) so a day can have split shifts (e.g. separate lunch
+and dinner windows); see `docs/ADMIN_OPERATIONS.md` and
+`App\Services\RestaurantAvailabilityService`.
+
+### `business_hour_exceptions`
+
+Added alongside the above: one row per calendar date
+(`date`, unique — deliberately **not** cast to `Carbon` on the model, see
+`docs/ADMIN_OPERATIONS.md` for the validation bug that caused) that
+overrides the regular weekly schedule for that date — a public holiday or
+other one-off ("استثناءات العطل الرسمية"). `is_closed` plus optional
+`opens_at`/`closes_at` plus a free-text `note`. Deliberately simple: no
+recurrence rules.
 
 ## Catalog
 
@@ -300,6 +316,16 @@ exceed a sane amount on a large order — this and `min_order_amount` weren't
 explicitly requested but are standard, low-cost safety fields for a coupon
 system; both are nullable and safe to ignore if unwanted. Soft-deletable
 (see "Soft deletes" above).
+
+### `coupon_categories` / `coupon_products`
+
+Added later (`docs/ADMIN_COUPONS.md`): plain `BelongsToMany` pivots
+(`Coupon::categories()`/`products()`) that optionally restrict a coupon to
+specific categories/products. No rows in either → unrestricted (the
+original, cart-wide behavior). Enforced in
+`App\Services\CartPricingService::applyCoupon()`, not just recorded for
+display — a restricted coupon only discounts the matching items'
+subtotal, and is rejected outright if the cart has no eligible item.
 
 ### `coupon_usages`
 

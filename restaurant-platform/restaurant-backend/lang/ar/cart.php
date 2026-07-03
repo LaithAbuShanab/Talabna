@@ -33,6 +33,7 @@ return [
         'coupon_usage_limit_reached' => 'وصل كود الخصم ":code" إلى الحد الأقصى لعدد مرات الاستخدام.',
         'coupon_per_user_limit_reached' => 'لقد استخدمت كود الخصم ":code" الحد الأقصى المسموح به لكل مستخدم.',
         'coupon_min_order_not_met' => 'كود الخصم ":code" يتطلب حدًا أدنى للطلب قدره :amount :currency.',
+        'coupon_not_applicable' => 'كود الخصم ":code" لا ينطبق على أي من المنتجات في سلتك.',
     ],
 
 ];

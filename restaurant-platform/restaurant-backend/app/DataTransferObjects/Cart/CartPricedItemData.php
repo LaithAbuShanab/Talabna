@@ -16,6 +16,7 @@ final readonly class CartPricedItemData
     public function __construct(
         public int $productId,
         public string $productName,
+        public ?int $categoryId,
         public int $unitBasePriceAmount,
         public array $options,
         public int $unitOptionsTotalAmount,

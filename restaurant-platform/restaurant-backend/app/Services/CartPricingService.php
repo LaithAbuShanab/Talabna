@@ -58,7 +58,7 @@ final class CartPricingService
         $this->assertMinimumOrderMet($itemsSubtotal, $settings, $deliveryZone);
 
         [$discount, $appliedCouponId, $appliedCouponCode] = $request->couponCode !== null
-            ? $this->applyCoupon($request->couponCode, $request->userId, $itemsSubtotal)
+            ? $this->applyCoupon($request->couponCode, $request->userId, $pricedItems, $itemsSubtotal)
             : [0, null, null];
 
         $taxableAmount = $itemsSubtotal - $discount;
@@ -152,6 +152,7 @@ final class CartPricingService
         return new CartPricedItemData(
             productId: $product->id,
             productName: $product->name,
+            categoryId: $product->category_id,
             unitBasePriceAmount: $product->price_amount,
             options: $optionsData,
             unitOptionsTotalAmount: $unitOptionsTotal,
@@ -246,9 +247,10 @@ final class CartPricingService
     }
 
     /**
+     * @param  list<CartPricedItemData>  $pricedItems
      * @return array{0: int, 1: int, 2: string}
      */
-    private function applyCoupon(string $couponCode, ?int $userId, int $itemsSubtotal): array
+    private function applyCoupon(string $couponCode, ?int $userId, array $pricedItems, int $itemsSubtotal): array
     {
         $coupon = Coupon::query()->where('code', strtoupper($couponCode))->first();
 
@@ -286,16 +288,49 @@ final class CartPricingService
             ]);
         }
 
+        // Optional restriction ("فئات أو منتجات محددة اختياريًا"): a coupon
+        // with no rows in coupon_categories/coupon_products is unrestricted
+        // (discount applies over the whole cart, the original behavior). A
+        // restricted coupon only discounts the *eligible* items' subtotal —
+        // not the whole cart — so "10% off pizzas" never quietly discounts
+        // the drinks in the same order too.
+        $eligibleSubtotal = $this->eligibleSubtotalForCoupon($coupon, $pricedItems);
+
+        if ($eligibleSubtotal === 0) {
+            throw new CartPricingException('coupon_not_applicable', ['code' => $couponCode]);
+        }
+
         $discount = $coupon->type === CouponType::Percentage
-            ? (int) round($itemsSubtotal * $coupon->value / 100)
+            ? (int) round($eligibleSubtotal * $coupon->value / 100)
             : $coupon->value;
 
         if ($coupon->max_discount_amount !== null) {
             $discount = min($discount, $coupon->max_discount_amount);
         }
 
-        $discount = min($discount, $itemsSubtotal);
+        $discount = min($discount, $eligibleSubtotal);
 
         return [$discount, $coupon->id, $coupon->code];
+    }
+
+    /**
+     * @param  list<CartPricedItemData>  $pricedItems
+     */
+    private function eligibleSubtotalForCoupon(Coupon $coupon, array $pricedItems): int
+    {
+        if (! $coupon->isRestricted()) {
+            return array_sum(array_map(fn (CartPricedItemData $item): int => $item->lineTotalAmount, $pricedItems));
+        }
+
+        $allowedProductIds = $coupon->products()->pluck('products.id')->all();
+        $allowedCategoryIds = $coupon->categories()->pluck('categories.id')->all();
+
+        return array_sum(array_map(
+            fn (CartPricedItemData $item): int => (in_array($item->productId, $allowedProductIds, true)
+                || in_array($item->categoryId, $allowedCategoryIds, true))
+                ? $item->lineTotalAmount
+                : 0,
+            $pricedItems,
+        ));
     }
 }

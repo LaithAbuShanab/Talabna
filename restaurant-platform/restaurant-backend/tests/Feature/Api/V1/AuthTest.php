@@ -93,6 +93,25 @@ class AuthTest extends TestCase
         $response->assertUnprocessable()->assertJsonValidationErrors(['email']);
     }
 
+    public function test_login_fails_for_a_blocked_account_even_with_the_correct_password(): void
+    {
+        User::factory()->create([
+            'email' => 'blocked@example.com',
+            'password' => Hash::make('Password123'),
+            'is_active' => false,
+            'blocked_reason' => 'Fraud',
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'blocked@example.com',
+            'password' => 'Password123',
+            'device_name' => 'android-9',
+        ]);
+
+        $response->assertUnprocessable()->assertJsonValidationErrors(['email']);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
     public function test_login_fails_for_unknown_email(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [

@@ -9,6 +9,7 @@ use Database\Factories\CouponFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -52,5 +53,25 @@ class Coupon extends Model
     public function usages(): HasMany
     {
         return $this->hasMany(CouponUsage::class);
+    }
+
+    /**
+     * Optional restriction: if this coupon has no rows in either
+     * categories()/products(), it's unrestricted (applies cart-wide) — see
+     * App\Services\CartPricingService::applyCoupon().
+     */
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(Category::class, 'coupon_categories');
+    }
+
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'coupon_products');
+    }
+
+    public function isRestricted(): bool
+    {
+        return $this->categories()->exists() || $this->products()->exists();
     }
 }

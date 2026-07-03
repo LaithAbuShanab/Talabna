@@ -29,13 +29,18 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword'])->middleware('throttle:forgot-password');
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
 
+    // logout/logout-all-devices deliberately skip 'ensure.active': a blocked
+    // customer must still be able to log out of a token that already works
+    // (their tokens are revoked anyway the moment they're blocked — see
+    // App\Services\CustomerBlockingService — so in practice this route is
+    // unreachable for a blocked account regardless).
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/logout-all-devices', [AuthController::class, 'logoutAllDevices']);
     });
 });
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'ensure.active'])->group(function (): void {
     // Sanctum's scaffolded "who am I" route, kept for compatibility.
     Route::get('/user', fn () => ApiResponse::success(request()->user()));
 

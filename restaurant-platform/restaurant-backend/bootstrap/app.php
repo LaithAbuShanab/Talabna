@@ -6,6 +6,7 @@ use App\Exceptions\CartPricingException;
 use App\Exceptions\OrderCreationException;
 use App\Exceptions\OrderReviewException;
 use App\Exceptions\OrderStatusTransitionException;
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -31,6 +32,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // this, Laravel's default guest redirect tries to route('login') and
         // throws a RouteNotFoundException instead of a clean 401.
         $middleware->redirectGuestsTo(fn () => null);
+
+        $middleware->alias([
+            'ensure.active' => EnsureAccountIsActive::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -80,6 +80,16 @@ Wrong email or password both return the same generic `422` validation error
 on the `email` field (`auth.failed`) — does not reveal which one was wrong.
 Response `200` on success, same shape as register.
 
+A **blocked** account (`users.is_active = false`, see `docs/ADMIN_CUSTOMERS.md`)
+fails login with a distinct `422` on `email` (`auth.account_blocked`),
+checked *after* the password succeeds — the customer already proved they
+own the credentials, so this isn't an enumeration risk, and is far more
+useful than a generic failure. Every other authenticated route also
+rejects a blocked account's token via the `ensure.active` middleware
+(`App\Http\Middleware\EnsureAccountIsActive`) — `logout`/
+`logout-all-devices` are the one deliberate exception (see
+`docs/ADMIN_CUSTOMERS.md`).
+
 ### `POST /api/v1/auth/logout`
 
 Requires `auth:sanctum`. Revokes **only the token used for this request**
@@ -143,9 +153,11 @@ Partial update.
 |---|---|
 | `name` | sometimes, required, string, max 255 |
 | `email` | sometimes, required, email, max 255, unique (ignoring the current user) |
+| `phone` | sometimes, nullable, string, max 30 |
 
-`role` can never be changed through this endpoint (not in the request rules,
-and not mass-assignable on `User` regardless).
+`role`/`is_active`/`blocked_reason` can never be changed through this
+endpoint (not in the request rules, and not mass-assignable on `User`
+regardless — see `docs/ADMIN_CUSTOMERS.md`).
 
 ### `PUT /api/v1/profile/password`
 

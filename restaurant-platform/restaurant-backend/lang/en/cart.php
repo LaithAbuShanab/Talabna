@@ -33,6 +33,7 @@ return [
         'coupon_usage_limit_reached' => 'The coupon code ":code" has reached its usage limit.',
         'coupon_per_user_limit_reached' => 'You have already used the coupon code ":code" the maximum number of times.',
         'coupon_min_order_not_met' => 'The coupon code ":code" requires a minimum order of :amount :currency.',
+        'coupon_not_applicable' => 'The coupon code ":code" does not apply to any of the items in your cart.',
     ],
 
 ];

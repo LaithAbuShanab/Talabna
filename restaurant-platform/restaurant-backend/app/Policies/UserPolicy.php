@@ -46,4 +46,25 @@ class UserPolicy
     {
         return $user->role === UserRole::SuperAdmin && $user->id !== $model->id;
     }
+
+    /**
+     * Guards blocking/unblocking a *customer* account from
+     * App\Filament\Resources\Customers\CustomerResource — a different
+     * Filament Resource over this same `users` table, but necessarily the
+     * same Policy class, since Laravel only ever registers one policy per
+     * Eloquent model (CustomerResource's own `viewAny`/`view`/`create`/
+     * `update`/`delete` are instead overridden directly on the Resource,
+     * since they need a different tier than UserResource's above — see its
+     * docblock). Same super_admin/manager tier as every other "sensitive
+     * account action" in this project.
+     */
+    public function block(User $user, User $customer): bool
+    {
+        return in_array($user->role, [UserRole::SuperAdmin, UserRole::Manager], true);
+    }
+
+    public function unblock(User $user, User $customer): bool
+    {
+        return in_array($user->role, [UserRole::SuperAdmin, UserRole::Manager], true);
+    }
 }

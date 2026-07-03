@@ -53,6 +53,18 @@ class User extends Authenticatable implements FilamentUser
         return $this->role->isAdmin() && $this->is_active;
     }
 
+    /**
+     * `is_active = false` means "blocked" for a customer account (see
+     * App\Services\CustomerBlockingService, App\Http\Middleware\
+     * EnsureAccountIsActive, docs/ADMIN_CUSTOMERS.md) — the same column
+     * that already gated admin panel access above, now also enforced on
+     * the customer-facing API.
+     */
+    public function isBlocked(): bool
+    {
+        return ! $this->is_active;
+    }
+
     public function addresses(): HasMany
     {
         return $this->hasMany(CustomerAddress::class);
