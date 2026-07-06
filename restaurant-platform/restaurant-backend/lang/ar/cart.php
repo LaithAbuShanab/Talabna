@@ -27,6 +27,8 @@ return [
         'option_group_max_exceeded' => 'يمكنك اختيار :max خيار كحد أقصى من ":group" لـ ":name".',
         'delivery_zone_required' => 'يرجى اختيار منطقة التوصيل.',
         'delivery_zone_invalid' => 'منطقة التوصيل المختارة غير متاحة.',
+        'delivery_not_allowed' => 'طلبات التوصيل غير مقبولة حاليًا.',
+        'pickup_not_allowed' => 'طلبات الاستلام غير مقبولة حاليًا.',
         'min_order_not_met' => 'الحد الأدنى لقيمة الطلب هو :amount :currency.',
         'coupon_invalid' => 'كود الخصم ":code" غير صالح.',
         'coupon_expired' => 'كود الخصم ":code" منتهي الصلاحية أو لم يبدأ بعد.',

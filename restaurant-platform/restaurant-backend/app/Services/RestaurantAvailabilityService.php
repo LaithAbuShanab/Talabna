@@ -33,7 +33,7 @@ final class RestaurantAvailabilityService
             return false;
         }
 
-        $now = now();
+        $now = now($settings->timezone);
 
         $exception = BusinessHourException::query()->where('date', $now->toDateString())->first();
 

@@ -24,4 +24,16 @@ class RestaurantSettingPolicy
     {
         return in_array($user->role, [UserRole::SuperAdmin, UserRole::Manager], true);
     }
+
+    /**
+     * "إظهار الإعدادات الحساسة فقط لمن لديه صلاحية" — gates the one
+     * genuinely sensitive field on the settings page, `push_notification_key`
+     * (see App\Models\RestaurantSetting's `encrypted` cast). Manager can
+     * see/edit everything else on the page; only super_admin can see
+     * whether a push key is configured or change it.
+     */
+    public function viewSensitive(User $user): bool
+    {
+        return $user->role === UserRole::SuperAdmin;
+    }
 }

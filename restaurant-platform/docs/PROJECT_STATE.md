@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-07-04 — initial scaffolding, local MySQL switch + GitHub push,
+Last updated: 2026-07-06 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
@@ -10,11 +10,217 @@ professional Filament v5 admin panel (roles, policies, audit trail), the
 Filament v5 admin Resources for the menu catalog itself (Category, Product,
 ProductImage, OptionGroup, OptionValue), the Filament v5 admin Orders
 screen wiring `OrderStatusTransitionService` to the panel for the first
-time, then the Filament v5 admin Resources for customers, coupons,
-delivery zones, and business hours — the last of the panel's originally
-planned navigation groups.
+time, the Filament v5 admin Resources for customers, coupons, delivery
+zones, and business hours, a Filament v5 admin Dashboard with reporting
+widgets, a shared time-period filter, and a safe CSV export, a single-record
+Filament v5 admin Restaurant Settings page covering every remaining
+restaurant-configuration field, with delivery/pickup and tax-inclusive
+rules enforced for real in checkout pricing, then a full Events/Listeners/
+queued-Jobs notification system: a push-provider abstraction, device-token
+storage, idempotent retryable delivery, and an admin database notification
+on every new order.
 
-## Filament v5 admin Customers/Coupons/Delivery/Business-Hours Resources (this task)
+## Events, Listeners & queued push notifications (this task)
+
+`restaurant-backend` only. Full detail — the event list, the two Listener
+shapes, the push abstraction and its Fake/Log implementations, the Job's
+idempotency/retry contract, and device-token storage — is in the new
+**`docs/NOTIFICATIONS.md`**; this section is a pointer/summary.
+
+- **Nine domain events** now exist for the order lifecycle plus payments:
+  `App\Events\{OrderCreated (already existed), OrderAccepted, OrderRejected,
+  OrderPreparing, OrderReady, OrderOutForDelivery, OrderDelivered,
+  OrderCancelled, PaymentStatusChanged}`. `OrderStatusTransitionService`
+  dispatches the generic `OrderStatusChanged` (kept, for the admin audit
+  trail) *and* the one specific event matching the new status, both only
+  after its transaction commits — same rule as before, extended.
+- **New `App\Services\PaymentStatusUpdateService`** — the first place a
+  `Payment`'s status (and the parent `Order`'s mirrored `payment_status`)
+  is ever changed: row-lock + transaction + dispatch-after-commit, the same
+  shape as `OrderStatusTransitionService`. Not wired to any HTTP endpoint
+  or Filament action yet (no payment gateway webhook exists in this
+  codebase) — it's the seam a future one calls into, flagged rather than
+  silently left unused.
+- **`App\Contracts\PushNotifier` rewritten** from a per-user
+  `send()` to a per-token `sendToToken()` returning a new
+  `App\Enums\PushDeliveryResult` (`Sent`/`InvalidToken`) — needed so a
+  provider's "this token is dead" response can be acted on per-token
+  without touching a user's other devices. `App\Notifications\Push\
+  LogPushNotifier` (default) and new `App\Notifications\Push\
+  FakePushNotifier` (bound instead whenever `app()->environment('testing')`
+  — "في بيئة الاختبار استخدم fake provider") both implement it; no code
+  anywhere depends on a concrete provider.
+- **New `App\Jobs\SendCustomerPushNotificationJob`** — the only queued unit
+  of work that calls `PushNotifier` ("queue جميع الإشعارات الخارجية"):
+  `$tries = 5`, `backoff()` of 10s/30s/60s/5m/15m ("retry وbackoff
+  واضحان"), and an idempotency claim/release via new
+  `App\Models\NotificationDispatchLog` (new `notification_dispatch_logs`
+  table) so a queue-level retry of the same event can never send the same
+  push twice ("منع إرسال إشعار مكرر لنفس event عند retry"). Deactivates a
+  `DeviceToken` the provider reports invalid ("إلغاء token غير الصالح").
+- **Nine `Send*PushNotification` listeners** (one per event) replace the
+  two prior generic ones (`SendOrderCreatedNotification`,
+  `SendOrderStatusChangedNotification` — deleted); each builds
+  already-translated text (new `lang/{en,ar}/notifications.php` —
+  "دعم نص عربي وإنجليزي") and a minimal, non-sensitive data payload
+  (order id/number/status only — never an amount or transaction
+  reference — "عدم تضمين بيانات حساسة داخل push payload"), then dispatches
+  the Job. New **`App\Listeners\NotifyAdminsOfNewOrder`** sends every
+  active admin/staff user a Filament database notification on `OrderCreated`
+  ("إرسال database notification للإدارة عند طلب جديد") — an internal
+  write, not required to be queued the way external push is.
+- **`device_tokens.device_name` column added** ("تخزين device tokens مع
+  platform وdevice name وlast_used_at" — `platform`/`last_used_at` already
+  existed). New **`App\Http\Controllers\Api\V1\DeviceTokenController`**
+  (`POST`/`DELETE /api/v1/device-tokens`) is the first real place tokens
+  get registered — `updateOrCreate` keyed on the unique `token` column,
+  reassigning a token to whoever is currently authenticated.
+- Tests: 42 new (`SendCustomerPushNotificationJobTest` ×10,
+  `NotifyAdminsOfNewOrderTest` ×4, `OrderPushNotificationListenersTest`
+  ×10, `SendPaymentStatusChangedPushNotificationTest` ×6,
+  `PaymentStatusUpdateServiceTest` ×5, `DeviceTokenTest` ×7), all against
+  `FakePushNotifier` — no test depends on network access. Full suite: 600
+  passed (up from 558), no regressions.
+
+## Filament v5 admin Restaurant Settings (previous task)
+
+`restaurant-backend` only. Full detail — every field, the safe-upload
+config, the encryption/sensitive-field-gating story for
+`push_notification_key`, the tax-inclusive/exclusive math, and the
+delivery/pickup/timezone enforcement decisions — is in the new
+**`docs/ADMIN_RESTAURANT_SETTINGS.md`**; this section is a pointer/summary.
+
+- **`App\Filament\Pages\ManageRestaurantSettings`** rewritten from a
+  6-field page into a full single-record settings page (bilingual name,
+  logo, cover image, phone, email, address, currency, timezone, tax
+  rate/inclusive, minimum order, delivery/pickup toggles, manual open/
+  closed + closure message, default prep time, bilingual cancellation/
+  terms/privacy text, social media links, order-notification settings
+  incl. an encrypted push key) — still bound to
+  `RestaurantSetting::current()`, still no create/delete route.
+- **New migration** (`2026_07_07_000000_add_extended_settings_fields_to_restaurant_settings_table`)
+  adds every new column; additive and reversible, no data loss.
+- **`push_notification_key`** uses Laravel's built-in `'encrypted'`
+  Eloquent cast (verified empirically: the raw DB column is genuine
+  ciphertext), is excluded from `RestaurantSetting`'s `#[Fillable(...)]`
+  list (only `ManageRestaurantSettings::save()`'s `forceFill()` can write
+  it), is gated behind a new `RestaurantSettingPolicy::viewSensitive()`
+  ability (`super_admin` only), is never prefilled on `mount()`, and a
+  blank submission leaves the stored value untouched — satisfies both
+  "عدم وضع مفاتيح خدمات الدفع أو Push كنص مكشوف داخل قاعدة البيانات دون
+  تشفير" and "إظهار الإعدادات الحساسة فقط لمن لديه صلاحية".
+- **Safe uploads**: `disk('public')`, `acceptedFileTypes` excluding
+  `image/svg+xml` (XSS risk), `maxSize(2048)`, no `preserveFilenames()`.
+- **Cache invalidation needed zero new code**: the pre-existing
+  `MenuCacheObserver` already invalidates on every `RestaurantSetting`
+  save.
+- **`allows_delivery`/`allows_pickup` and `is_tax_inclusive` are enforced
+  in `CartPricingService`, not just stored** (explicit user choice over
+  settings-only): a disallowed delivery type throws
+  `CartPricingException`, and tax-inclusive mode extracts tax from the
+  price instead of adding it on top. `timezone` was also wired into
+  `RestaurantAvailabilityService::isOpenNow()` (`now($settings->timezone)`),
+  defaulting to `UTC` so existing behavior is unchanged unless a restaurant
+  sets a different zone.
+- **Found and fixed a pre-existing bug this task's work exposed**:
+  `AdminPanelProvider`'s `brandLogo`/`favicon` closures built the logo URL
+  with a bare `asset($path)`, which never matches a `public`-disk upload's
+  real URL (`/storage/...` via the `storage:link` symlink) — flagged as
+  out-of-scope in the earlier Menu Resources task, now fixed via
+  `Storage::disk('public')->url($path)`.
+- Tests: `RestaurantSettingsPageTest` (+8 new: single-record enforcement,
+  sensitive-field visibility per role, blank-preserves-existing push key,
+  push key encryption, file-upload type rejection/acceptance,
+  notification-email validation, tax-inclusive/rate persistence),
+  `RestaurantSettingPolicyTest` (+1: `viewSensitive` per role),
+  `CartPricingServiceTest` (+5: delivery/pickup rejection, inclusive vs.
+  exclusive tax), `RestaurantAvailabilityServiceTest` (+2: non-UTC
+  timezone). Full suite: 558 passed (up from 542), no regressions.
+
+## Filament v5 admin Dashboard (previous task)
+
+`restaurant-backend` only. Full detail — the revenue-recognition decision,
+every widget's role tier, the caching/indexing strategy, and the CSV-safety
+mechanism — is in the new **`docs/ADMIN_DASHBOARD.md`**; this section is a
+pointer/summary.
+
+- **`App\Filament\Pages\Dashboard`** replaces Filament's default Dashboard
+  page, adding one shared time-period selector
+  (`App\Enums\DashboardPeriod`: Today/Last 7 days/Last 30 days/This
+  month — "اختيار فترة زمنية") via Filament's own built-in
+  `HasFiltersForm`, persisted in the session.
+- **Seven widgets**, backed by one aggregation service
+  (`App\Services\DashboardMetricsService`): `OrdersOverviewWidget`
+  (orders/revenue/AOV/cancelled — period-aware), `OperationalStatusWidget`
+  (pending/preparing/late — deliberately **not** period-scoped, "right
+  now" state), `SalesTrendChartWidget` (line chart, its own local 7d/30d
+  filter), `OrderStatusDistributionWidget`/`PaymentMethodDistributionWidget`
+  (doughnut charts, period-aware), `BestSellingProductsWidget` (a plain
+  custom Blade-view widget, not a `TableWidget` — the underlying query is
+  a `GROUP BY` aggregate that doesn't map onto Filament's per-record Table
+  component), `LatestOrdersWidget` (a genuine `TableWidget`, not
+  period-scoped).
+- **Revenue recognition, decided and documented as required**: every
+  revenue figure counts `status = delivered` orders only — never `payment_status
+  = paid` (which can be true before delivery, or stay `pending` well
+  after it for cash settled at the door) — the same rule the Customers
+  Resource task already established for "total spent," kept consistent
+  rather than inventing a second rule. Cancelled/rejected orders are
+  automatically excluded as a direct consequence, not a bolted-on special
+  case.
+- **Role-gated widgets** ("احترام صلاحيات الأدوار"): financial/reporting
+  widgets (revenue, AOV, payment methods, sales trend, best sellers) are
+  `super_admin`/`manager`/`cashier` only; operational widgets
+  (pending/preparing/late, status distribution, latest orders) are
+  visible to every admin role, matching `OrderPolicy::viewAny()`'s tier
+  for the Orders screen itself. Enforced via `canView()` on each widget
+  class (widgets aren't Eloquent-model-backed, so there's no Policy to
+  auto-discover).
+- **Performance**: a new composite index (`orders(status, created_at)` —
+  nearly every dashboard query filters by both), pure-SQL aggregation
+  (never loading rows into PHP to sum them), and **TTL-only caching, no
+  invalidation observer** — a deliberate difference from
+  `MenuCacheService`'s catalog-data pattern, since orders change
+  constantly and invalidating on every write would defeat the point of
+  caching an aggregation. Two TTLs: 120s reporting, 30s operational.
+- **Real bug found by testing**: a `Select::make('period')->options
+  (DashboardPeriod::class)`'s live filter value could plausibly resolve to
+  either the raw string or the enum case itself, per the exact ambiguity
+  already caught once this session in `CouponForm` (see
+  `docs/ADMIN_COUPONS.md`). Rather than repeat that mistake, every
+  period-aware widget reads the filter through one shared trait
+  (`App\Filament\Widgets\Concerns\ReadsDashboardPeriodFilter`) that
+  accepts both shapes — verified directly against both in the test suite
+  before trusting either assumption.
+- **CSV export, safely** ("إمكانية تصدير تقرير طلبات CSV بطريقة آمنة",
+  "منع CSV injection"): a header action on the Dashboard streams orders
+  for the selected period as CSV (`App\Http\Controllers\Admin\
+  OrderExportController`, chunked, never loaded fully into memory). Every
+  cell goes through a new `App\Support\Csv::sanitizeCell()` — the standard
+  OWASP mitigation, prefixing any value starting with `=`/`+`/`-`/`@`/tab/
+  CR with a literal single quote so a spreadsheet app never executes it
+  as a formula (the realistic vector: a customer's free-text name). A
+  UTF-8 BOM is written first for correct Arabic rendering in Excel. The
+  export route (`/admin/orders/export/csv`) deliberately uses an extra
+  path segment to avoid colliding with `OrderResource`'s own
+  `/admin/orders/{record}` view route, which is the same single-segment
+  shape a shorter path would have been.
+- **Tests**: `tests/Feature/Services/DashboardMetricsServiceTest` (13
+  tests covering every calculation, including the revenue-recognition
+  rule and cache behavior itself), `tests/Feature/Filament/
+  DashboardWidgetsTest` (8 tests: the full role matrix, rendering, stat
+  values reflecting the period, both filter-value shapes), and
+  `tests/Feature/Admin/OrderExportControllerTest` (9 tests: authorization,
+  BOM/headers, every dangerous prefix actually neutralized, a normal name
+  left untouched, period defaulting/fallback) — 30 new tests.
+- Full backend suite: **542 tests / 1818 assertions** (up from 512/1716),
+  Pint clean, stable, verified against the real local MySQL `Talabna`
+  database — the Dashboard page and every widget's aggregation exercised
+  directly against real seeded order data, and the CSV export downloaded
+  and inspected for real content before the permanent test suite was
+  written.
+
+## Filament v5 admin Customers/Coupons/Delivery/Business-Hours Resources (previous task)
 
 `restaurant-backend` only. Full detail — every field, the two real bugs
 found, and the enforcement decisions behind blocking/coupon-restriction/

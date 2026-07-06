@@ -13,6 +13,7 @@ use App\Models\OptionValue;
 use App\Models\Product;
 use App\Models\ProductOptionGroup;
 use App\Models\RestaurantSetting;
+use App\Notifications\Push\FakePushNotifier;
 use App\Notifications\Push\LogPushNotifier;
 use App\Observers\MenuCacheObserver;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -26,10 +27,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // No real push provider is wired up yet — see App\Contracts\PushNotifier
-        // and App\Notifications\Push\LogPushNotifier. Replace this binding with
-        // a concrete FCM/APNs/NativePHP-push implementation when one exists.
-        $this->app->bind(PushNotifier::class, LogPushNotifier::class);
+        // "في بيئة الاختبار استخدم fake provider": the test suite never talks to
+        // a real push provider, or even the log — App\Notifications\Push\
+        // FakePushNotifier records calls in memory so tests can assert on them.
+        // Singleton so every resolution (Job, test assertion) shares one
+        // instance. Outside testing, no real push provider is wired up yet —
+        // see App\Contracts\PushNotifier and App\Notifications\Push\
+        // LogPushNotifier. Replace that binding with a concrete FCM/APNs/
+        // NativePHP-push implementation when one exists; nothing else needs
+        // to change.
+        if ($this->app->environment('testing')) {
+            $this->app->singleton(PushNotifier::class, FakePushNotifier::class);
+        } else {
+            $this->app->bind(PushNotifier::class, LogPushNotifier::class);
+        }
     }
 
     /**

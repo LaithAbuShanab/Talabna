@@ -110,4 +110,26 @@ class RestaurantAvailabilityServiceTest extends TestCase
 
         $this->assertTrue($this->service()->isOpenNow());
     }
+
+    public function test_it_uses_the_configured_timezone_rather_than_utc(): void
+    {
+        // Test time is 2026-07-08 13:00:00 UTC, which is 16:00 in Asia/Amman
+        // (UTC+3) — business hours are checked against the *local* time.
+        $settings = RestaurantSetting::current();
+        $settings->update(['is_accepting_orders' => true, 'timezone' => 'Asia/Amman']);
+        BusinessHour::factory()->create(['day_of_week' => now('Asia/Amman')->dayOfWeek, 'opens_at' => '15:00:00', 'closes_at' => '17:00:00']);
+
+        $this->assertTrue($this->service()->isOpenNow($settings));
+    }
+
+    public function test_it_is_closed_outside_business_hours_measured_in_the_configured_timezone(): void
+    {
+        // 13:00 UTC falls inside 12:00-14:00, but that window has already
+        // passed by 16:00 in Asia/Amman (UTC+3).
+        $settings = RestaurantSetting::current();
+        $settings->update(['is_accepting_orders' => true, 'timezone' => 'Asia/Amman']);
+        BusinessHour::factory()->create(['day_of_week' => now('Asia/Amman')->dayOfWeek, 'opens_at' => '12:00:00', 'closes_at' => '14:00:00']);
+
+        $this->assertFalse($this->service()->isOpenNow($settings));
+    }
 }

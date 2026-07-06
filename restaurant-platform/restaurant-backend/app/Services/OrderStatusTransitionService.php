@@ -8,6 +8,13 @@ use App\DataTransferObjects\Order\TransitionOrderStatusData;
 use App\Enums\DeliveryType;
 use App\Enums\OrderStatus;
 use App\Enums\UserRole;
+use App\Events\OrderAccepted;
+use App\Events\OrderCancelled;
+use App\Events\OrderDelivered;
+use App\Events\OrderOutForDelivery;
+use App\Events\OrderPreparing;
+use App\Events\OrderReady;
+use App\Events\OrderRejected;
 use App\Events\OrderStatusChanged;
 use App\Exceptions\OrderStatusTransitionException;
 use App\Models\Order;
@@ -95,6 +102,21 @@ final class OrderStatusTransitionService
         // it, so a listener can never observe a transition that gets
         // rolled back — see App\Events\OrderStatusChanged.
         OrderStatusChanged::dispatch($updatedOrder, $from, $data->to, $data->actor);
+
+        // Also dispatched: the specific per-status event (App\Events\Order*)
+        // matching $data->to, so a listener that only cares about one status
+        // (e.g. a push notification) doesn't have to filter the generic
+        // event itself. Both fire from the same post-commit point — see
+        // docs/NOTIFICATIONS.md.
+        match ($data->to) {
+            OrderStatus::Accepted => OrderAccepted::dispatch($updatedOrder, $data->actor),
+            OrderStatus::Rejected => OrderRejected::dispatch($updatedOrder, $data->actor),
+            OrderStatus::Preparing => OrderPreparing::dispatch($updatedOrder, $data->actor),
+            OrderStatus::Ready => OrderReady::dispatch($updatedOrder, $data->actor),
+            OrderStatus::OutForDelivery => OrderOutForDelivery::dispatch($updatedOrder, $data->actor),
+            OrderStatus::Delivered => OrderDelivered::dispatch($updatedOrder, $data->actor),
+            OrderStatus::Cancelled => OrderCancelled::dispatch($updatedOrder, $data->actor),
+        };
 
         return $updatedOrder->load(['statusHistories', 'payments']);
     }

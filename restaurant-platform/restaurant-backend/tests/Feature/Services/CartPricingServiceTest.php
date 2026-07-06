@@ -364,6 +364,53 @@ class CartPricingServiceTest extends TestCase
         $this->assertSame(1000 + 350, $result->grandTotalAmount);
     }
 
+    public function test_it_throws_when_delivery_is_disabled_in_settings(): void
+    {
+        RestaurantSetting::factory()->create(['allows_delivery' => false, 'allows_pickup' => true, 'min_order_amount' => 0]);
+        $product = $this->makeAvailableProduct();
+        $zone = DeliveryZone::factory()->create(['is_active' => true, 'min_order_amount' => null]);
+
+        try {
+            $this->service->price(new CartPricingRequestData(
+                items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+                deliveryType: DeliveryType::Delivery,
+                deliveryZoneId: $zone->id,
+            ));
+            $this->fail('Expected CartPricingException was not thrown.');
+        } catch (CartPricingException $e) {
+            $this->assertSame('delivery_not_allowed', $e->errorCode);
+        }
+    }
+
+    public function test_it_throws_when_pickup_is_disabled_in_settings(): void
+    {
+        RestaurantSetting::factory()->create(['allows_delivery' => true, 'allows_pickup' => false, 'min_order_amount' => 0]);
+        $product = $this->makeAvailableProduct();
+
+        try {
+            $this->service->price(new CartPricingRequestData(
+                items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+                deliveryType: DeliveryType::Pickup,
+            ));
+            $this->fail('Expected CartPricingException was not thrown.');
+        } catch (CartPricingException $e) {
+            $this->assertSame('pickup_not_allowed', $e->errorCode);
+        }
+    }
+
+    public function test_it_allows_delivery_and_pickup_by_default(): void
+    {
+        RestaurantSetting::factory()->create(['min_order_amount' => 0]);
+        $product = $this->makeAvailableProduct(['price_amount' => 500]);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+        ));
+
+        $this->assertSame(500, $result->itemsSubtotalAmount);
+    }
+
     // --- Minimum order -------------------------------------------------
 
     public function test_it_throws_when_the_restaurants_minimum_order_amount_is_not_met(): void
@@ -758,6 +805,47 @@ class CartPricingServiceTest extends TestCase
         $this->assertSame(500, $result->discountAmount);
         $this->assertSame(50, $result->taxAmount);
         $this->assertSame(550, $result->grandTotalAmount);
+    }
+
+    public function test_inclusive_tax_is_extracted_from_the_price_not_added_on_top(): void
+    {
+        RestaurantSetting::factory()->create([
+            'is_tax_enabled' => true,
+            'is_tax_inclusive' => true,
+            'tax_rate_bps' => 1000,
+            'min_order_amount' => 0,
+        ]);
+        $product = $this->makeAvailableProduct(['price_amount' => 1100]);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+        ));
+
+        // 1100 already includes 10% tax -> tax portion is 1100 - 1100/1.1 = 100.
+        $this->assertTrue($result->isTaxInclusive);
+        $this->assertSame(100, $result->taxAmount);
+        $this->assertSame(1100, $result->grandTotalAmount);
+    }
+
+    public function test_exclusive_tax_is_added_on_top_of_the_price(): void
+    {
+        RestaurantSetting::factory()->create([
+            'is_tax_enabled' => true,
+            'is_tax_inclusive' => false,
+            'tax_rate_bps' => 1000,
+            'min_order_amount' => 0,
+        ]);
+        $product = $this->makeAvailableProduct(['price_amount' => 1000]);
+
+        $result = $this->service->price(new CartPricingRequestData(
+            items: [new CartItemInputData(productId: $product->id, quantity: 1)],
+            deliveryType: DeliveryType::Pickup,
+        ));
+
+        $this->assertFalse($result->isTaxInclusive);
+        $this->assertSame(100, $result->taxAmount);
+        $this->assertSame(1100, $result->grandTotalAmount);
     }
 
     // --- Security: client-supplied prices are impossible -------------------------------------------------

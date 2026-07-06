@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
 use App\Filament\Support\NavigationGroup;
 use App\Models\RestaurantSetting;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -21,6 +21,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -40,9 +41,13 @@ class AdminPanelProvider extends PanelProvider
             // singleton the public menu API's /restaurant endpoint
             // serves), so editing them on the new Settings page updates
             // the panel's own branding immediately, with no redeploy.
+            // logo_path is uploaded to the `public` disk (see
+            // ManageRestaurantSettings), so it needs Storage::url() — a
+            // bare asset($path) points at the web root, not
+            // storage/app/public via the storage:link symlink.
             ->brandName(fn () => RestaurantSetting::current()->restaurant_name)
-            ->brandLogo(fn () => ($path = RestaurantSetting::current()->logo_path) !== null ? asset($path) : null)
-            ->favicon(fn () => ($path = RestaurantSetting::current()->logo_path) !== null ? asset($path) : null)
+            ->brandLogo(fn () => ($path = RestaurantSetting::current()->logo_path) !== null ? Storage::disk('public')->url($path) : null)
+            ->favicon(fn () => ($path = RestaurantSetting::current()->logo_path) !== null ? Storage::disk('public')->url($path) : null)
             // Filament resolves the whole group list (label + icon per
             // case) straight from this enum — see its class docblock for
             // why some groups have no Resource yet.

@@ -51,4 +51,14 @@ class RestaurantSettingPolicyTest extends TestCase
             $this->assertFalse($this->policy->update($user, $settings), "{$role->value} should not be able to update settings");
         }
     }
+
+    public function test_only_super_admin_can_view_sensitive_settings(): void
+    {
+        $this->assertTrue($this->policy->viewSensitive($this->makeUser(UserRole::SuperAdmin)));
+
+        foreach ([UserRole::Manager, UserRole::Kitchen, UserRole::Cashier, UserRole::Support] as $role) {
+            $user = $this->makeUser($role);
+            $this->assertFalse($this->policy->viewSensitive($user), "{$role->value} should not be able to view sensitive settings");
+        }
+    }
 }

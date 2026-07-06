@@ -121,12 +121,16 @@ from trusted, non-user-facing code paths.
    status), `note` (the reason, if any), `metadata` (arbitrary optional
    JSON context), and `changed_by_user_id` (the actor, or `null` for a
    system transition).
-9. **Event**: `App\Events\OrderStatusChanged` is dispatched *after* the
+9. **Events**: `App\Events\OrderStatusChanged` (generic — feeds
+   `App\Listeners\LogAdminOrderStatusChange`'s audit trail) and the one
+   specific event matching the new status (`App\Events\OrderAccepted`,
+   `OrderRejected`, `OrderPreparing`, `OrderReady`, `OrderOutForDelivery`,
+   `OrderDelivered`, or `OrderCancelled`) are both dispatched *after* the
    transaction returns successfully — never from inside it, so a listener
-   can never observe a transition that later rolls back.
-   `App\Listeners\SendOrderStatusChangedNotification` (queued) sends a push
-   notification through the same `App\Contracts\PushNotifier` seam used by
-   order creation.
+   can never observe a transition that later rolls back. Each specific
+   event has its own `Send*PushNotification` listener, which queues
+   `App\Jobs\SendCustomerPushNotificationJob` — see `docs/NOTIFICATIONS.md`
+   for the full events/listeners/push architecture.
 
 ## Example
 

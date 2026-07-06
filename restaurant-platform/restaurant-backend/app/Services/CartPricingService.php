@@ -48,6 +48,8 @@ final class CartPricingService
 
         $settings = RestaurantSetting::current();
 
+        $this->assertDeliveryTypeAllowed($request->deliveryType, $settings);
+
         [$pricedItems, $itemsSubtotal, $optionsTotal] = $this->priceItems($request->items);
 
         $deliveryZone = $this->resolveDeliveryZone($request->deliveryType, $request->deliveryZoneId);
@@ -62,11 +64,15 @@ final class CartPricingService
             : [0, null, null];
 
         $taxableAmount = $itemsSubtotal - $discount;
-        $taxAmount = $settings->is_tax_enabled
-            ? (int) round($taxableAmount * $settings->tax_rate_bps / 10000)
-            : 0;
+        $taxAmount = $this->computeTax($taxableAmount, $settings);
 
-        $grandTotal = $itemsSubtotal - $discount + $deliveryFee + $taxAmount;
+        // Inclusive: the tax is already baked into itemsSubtotal, so it's
+        // never added a second time — taxAmount above exists purely for
+        // transparency (e.g. an invoice line "of which tax: X"). Exclusive
+        // (the original, still-default behavior): tax is added on top.
+        $grandTotal = $settings->is_tax_inclusive
+            ? $itemsSubtotal - $discount + $deliveryFee
+            : $itemsSubtotal - $discount + $deliveryFee + $taxAmount;
 
         return new CartPricingResultData(
             items: $pricedItems,
@@ -80,6 +86,7 @@ final class CartPricingService
             deliveryZoneId: $deliveryZone?->id,
             deliveryFeeAmount: $deliveryFee,
             isTaxApplied: $settings->is_tax_enabled,
+            isTaxInclusive: $settings->is_tax_inclusive,
             taxAmount: $taxAmount,
             grandTotalAmount: $grandTotal,
         );
@@ -213,6 +220,47 @@ final class CartPricingService
                 ]);
             }
         }
+    }
+
+    /**
+     * "قبول delivery"/"قبول pickup" — settings-level toggles for whether
+     * the restaurant currently takes each delivery type at all (e.g. a
+     * kitchen too short-staffed to deliver today, or a location that's
+     * pickup-only). Checked before anything else about the cart, same
+     * fail-fast placement as `is_accepting_orders`.
+     */
+    private function assertDeliveryTypeAllowed(DeliveryType $deliveryType, RestaurantSetting $settings): void
+    {
+        if ($deliveryType === DeliveryType::Delivery && ! $settings->allows_delivery) {
+            throw new CartPricingException('delivery_not_allowed');
+        }
+
+        if ($deliveryType === DeliveryType::Pickup && ! $settings->allows_pickup) {
+            throw new CartPricingException('pickup_not_allowed');
+        }
+    }
+
+    /**
+     * "هل الأسعار تشمل الضريبة" (is_tax_inclusive): the *amount* returned
+     * here is always the tax portion, whichever way it's computed — what
+     * differs is only whether `price()` adds it on top of the grand total
+     * (exclusive) or leaves the total alone because it was already baked
+     * into `$taxableAmount` (inclusive, extracted only for display/
+     * reporting transparency).
+     */
+    private function computeTax(int $taxableAmount, RestaurantSetting $settings): int
+    {
+        if (! $settings->is_tax_enabled) {
+            return 0;
+        }
+
+        $rate = $settings->tax_rate_bps / 10000;
+
+        if ($settings->is_tax_inclusive) {
+            return (int) round($taxableAmount - ($taxableAmount / (1 + $rate)));
+        }
+
+        return (int) round($taxableAmount * $rate);
     }
 
     private function resolveDeliveryZone(DeliveryType $deliveryType, ?int $deliveryZoneId): ?DeliveryZone

@@ -201,7 +201,11 @@ group per product) via `->unique(modifyRuleUsing: ...->where('product_id', ...))
    pre-existing `RestaurantSetting.logo_path` field (`ManageRestaurantSettings`,
    from the earlier admin-panel task) has the same missing `->disk('public')`
    and is worth fixing too, but is out of this task's scope — flagged here
-   rather than silently touched. Caught by a Livewire test that uploaded a
+   rather than silently touched. **Fixed in the Restaurant Settings task**:
+   see `docs/ADMIN_RESTAURANT_SETTINGS.md` — `->disk('public')` was added to
+   `logo_path`/`cover_image_path`, and `AdminPanelProvider`'s `brandLogo`/
+   `favicon` closures were also fixed to use `Storage::disk('public')->url()`
+   instead of a bare `asset($path)`. Caught by a Livewire test that uploaded a
    real fake file and then tried to edit the record (the create-only path
    doesn't re-read the file from disk, so it wouldn't have caught this).
 3. **`ProductImage.product_id` was missing from its `#[Fillable(...)]`

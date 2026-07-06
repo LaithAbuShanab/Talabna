@@ -27,6 +27,8 @@ return [
         'option_group_max_exceeded' => 'You can select at most :max option(s) from ":group" for ":name".',
         'delivery_zone_required' => 'Please choose a delivery zone.',
         'delivery_zone_invalid' => 'The selected delivery zone is not available.',
+        'delivery_not_allowed' => 'Delivery orders are not being accepted right now.',
+        'pickup_not_allowed' => 'Pickup orders are not being accepted right now.',
         'min_order_not_met' => 'The minimum order amount is :amount :currency.',
         'coupon_invalid' => 'The coupon code ":code" is not valid.',
         'coupon_expired' => 'The coupon code ":code" has expired or is not active yet.',

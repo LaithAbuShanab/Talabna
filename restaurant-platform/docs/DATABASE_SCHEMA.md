@@ -463,9 +463,20 @@ order-specific rules that service doesn't know about.
 ### `device_tokens`
 
 Push-notification tokens for the customer app (NativePHP push, once that's
-wired up). `platform` is `DevicePlatform` (`android`/`ios`).
-`token` is globally unique; `is_active` lets a token be disabled without
-deleting the row (e.g. after a push failure) while keeping history.
+wired up). `platform` is `DevicePlatform` (`android`/`ios`); `device_name`
+(nullable, e.g. "Laith's Pixel") identifies which of a user's devices a
+token belongs to. `token` is globally unique; `is_active` lets a token be
+disabled without deleting the row — automatically, when
+`App\Contracts\PushNotifier` reports a token as no longer valid — while
+keeping history. See `docs/NOTIFICATIONS.md`.
+
+### `notification_dispatch_logs`
+
+An append-only idempotency ledger: one row per (event, recipient) push
+notification that has actually been dispatched, keyed by a unique
+`idempotency_key`. `App\Jobs\SendCustomerPushNotificationJob` claims a key
+here before attempting delivery, so a queue-level retry of the same event
+can never send the same push twice — see `docs/NOTIFICATIONS.md`.
 
 ## Indexes
 
@@ -476,7 +487,7 @@ were added for the columns actually used to search/filter, per the brief:
 `categories.is_active`; `delivery_zones.is_active`; `coupons.is_active`;
 `order_status_histories.status`; plus the natural unique indexes
 (`orders.order_number`, `categories.slug`, `products.slug`, `coupons.code`,
-`device_tokens.token`).
+`device_tokens.token`, `notification_dispatch_logs.idempotency_key`).
 
 ## What's deliberately not here
 

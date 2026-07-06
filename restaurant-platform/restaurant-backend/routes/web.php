@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Admin\OrderExportController;
 use App\Http\Controllers\Admin\OrderPrintController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,3 +21,11 @@ Route::get('/', function () {
 Route::get('/admin/orders/{order}/print', OrderPrintController::class)
     ->middleware(['web', 'auth'])
     ->name('admin.orders.print');
+
+// See App\Http\Controllers\Admin\OrderExportController's docblock. The
+// extra `/csv` segment (not just `/admin/orders/export`) deliberately
+// avoids colliding with OrderResource's `/admin/orders/{record}` view
+// route, which is the exact same single-segment shape "export" would be.
+Route::get('/admin/orders/export/csv', OrderExportController::class)
+    ->middleware(['web', 'auth'])
+    ->name('admin.orders.export');

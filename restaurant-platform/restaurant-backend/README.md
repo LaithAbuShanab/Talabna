@@ -7,6 +7,41 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Running the queue worker
+
+Customer push notifications (order status updates, payment status updates)
+are dispatched as queued jobs — see `docs/NOTIFICATIONS.md` for the full
+architecture. Nothing is actually delivered until a queue worker is
+running to process them.
+
+- **Local development**: `QUEUE_CONNECTION` defaults to `database` (see
+  `.env`); start a worker in a separate terminal:
+
+  ```bash
+  php artisan queue:work
+  ```
+
+  Use `php artisan queue:listen` instead while actively developing —
+  it auto-reloads code changes without needing a restart, at the cost of
+  being slightly slower per job. `queue:work` does **not** pick up code
+  changes automatically; restart it after deploying/pulling new code.
+
+- **Production**: run `php artisan queue:work --tries=1` under a process
+  monitor (Supervisor, systemd, etc.) so it's automatically restarted if it
+  crashes or is stopped by a deploy. `--tries=1` is safe here because every
+  queued job in this app manages its own `$tries`/`backoff()` explicitly
+  (see `App\Jobs\SendCustomerPushNotificationJob`) rather than relying on
+  the worker's default retry count.
+- Failed jobs (all retries exhausted) land in the `failed_jobs` table —
+  inspect with `php artisan queue:failed`, retry one with
+  `php artisan queue:retry {id}` or all of them with
+  `php artisan queue:retry all`.
+- If the queue worker is ever stopped for an extended period, queued
+  notifications simply wait in the `jobs` table until a worker picks them
+  up again — nothing is lost, and `App\Models\NotificationDispatchLog`'s
+  idempotency guard means a notification is never sent twice even if a job
+  ends up being retried much later.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

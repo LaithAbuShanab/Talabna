@@ -29,6 +29,7 @@ final readonly class CartPricingResultData
         public ?int $deliveryZoneId,
         public int $deliveryFeeAmount,
         public bool $isTaxApplied,
+        public bool $isTaxInclusive,
         public int $taxAmount,
         public int $grandTotalAmount,
     ) {}

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\CartPreviewController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CustomerAddressController;
 use App\Http\Controllers\Api\V1\DeliveryZoneController;
+use App\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\OrderReviewController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
@@ -53,6 +54,10 @@ Route::middleware(['auth:sanctum', 'ensure.active'])->group(function (): void {
     Route::put('/addresses/{address}', [CustomerAddressController::class, 'update']);
     Route::delete('/addresses/{address}', [CustomerAddressController::class, 'destroy']);
     Route::post('/addresses/{address}/default', [CustomerAddressController::class, 'setDefault']);
+
+    // See docs/NOTIFICATIONS.md "Device tokens".
+    Route::post('/device-tokens', [DeviceTokenController::class, 'store']);
+    Route::delete('/device-tokens', [DeviceTokenController::class, 'destroy']);
 
     // See docs/API_ORDERS.md.
     Route::get('/orders', [OrderController::class, 'index']);

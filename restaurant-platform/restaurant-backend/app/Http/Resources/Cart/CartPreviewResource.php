@@ -47,6 +47,7 @@ final class CartPreviewResource extends JsonResource
             ],
             'tax' => [
                 'applied' => $this->isTaxApplied,
+                'inclusive' => $this->isTaxInclusive,
                 'amount' => Money::format($this->taxAmount, $currency),
             ],
             'grand_total' => Money::format($this->grandTotalAmount, $currency),
