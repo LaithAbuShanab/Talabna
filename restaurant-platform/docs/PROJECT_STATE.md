@@ -15,12 +15,63 @@ zones, and business hours, a Filament v5 admin Dashboard with reporting
 widgets, a shared time-period filter, and a safe CSV export, a single-record
 Filament v5 admin Restaurant Settings page covering every remaining
 restaurant-configuration field, with delivery/pickup and tax-inclusive
-rules enforced for real in checkout pricing, then a full Events/Listeners/
+rules enforced for real in checkout pricing, a full Events/Listeners/
 queued-Jobs notification system: a push-provider abstraction, device-token
 storage, idempotent retryable delivery, and an admin database notification
-on every new order.
+on every new order, then a lightweight, rate-limited order-status polling
+endpoint for the customer app, with an ETag/`updated_since` cheap-revalidation
+mechanism and a documented (not yet built) path to WebSockets/Reverb.
 
-## Events, Listeners & queued push notifications (this task)
+## Order status polling for the customer app (this task)
+
+`restaurant-backend` only. Full detail — the response shape, ETag/
+`updated_since` mechanics, recommended client polling interval, and the
+prepared-but-not-installed WebSocket/Reverb migration path — is in the new
+**`docs/ORDER_STATUS_POLLING.md`**; this section is a pointer/summary.
+
+- **New `GET /api/v1/orders/{order}/status`**
+  (`App\Http\Controllers\Api\V1\OrderController::status()`) — the
+  endpoint a poll loop calls instead of the full `show()` order payload.
+  Returns `{changed, status, updated_at, expected_delivery_at,
+  can_be_cancelled, timeline}` normally, or the small `{changed: false,
+  status, updated_at}` when `?updated_since=<ISO8601>` shows nothing
+  changed — the status-history query doesn't even run in that case.
+  `updated_at` (`orders.updated_at`, which every status/payment-status
+  change already touches) is the **version marker**
+  ("إرجاع version أو updated_at لتمييز التغيير").
+- **Also carries real HTTP conditional-GET support**: `ETag`/
+  `Last-Modified` headers derived from the same `updated_at`; a matching
+  `If-None-Match` gets a true, empty-bodied `304` via Symfony's
+  `Response::isNotModified()` — free for any client whose HTTP layer
+  already understands caching, alongside (not instead of) the simpler
+  `updated_since` query param.
+- **New `App\Http\Resources\OrderStatusResource`** is the one place "what
+  does an order-status update look like" is defined — deliberately reused
+  later if/when broadcasting is added (a `broadcastWith()` would call the
+  same Resource), so client-side parsing never has to change, only the
+  transport.
+- **New `order-status-poll` rate limiter** (`AppServiceProvider`) — 30/min
+  per authenticated user, deliberately more generous than a normal
+  endpoint (polling is its whole purpose) but still bounded.
+- **No broadcasting/Reverb/Pusher installed** — deliberately, per this
+  task's own instruction not to bring it in before it's technically needed.
+  `docs/ORDER_STATUS_POLLING.md` documents exactly what a future
+  `php artisan install:broadcasting` + `ShouldBroadcastNow` on the existing
+  per-status events would look like, reusing `OrderStatusResource`.
+- **Known, documented limitation**: `orders.updated_at` (and the ETag
+  derived from it) is whole-second precision only (an ordinary
+  `timestamp` column) — two genuine changes within the same second would
+  share an ETag. Accepted for now; order status changes are realistically
+  minutes apart.
+- Tests: `tests/Feature/Api/V1/Order/OrderStatusTest.php` (14 new) —
+  payload shape, lean-payload guarantee (no items/payments/addresses),
+  version marker, ownership/auth/not-found, all three `updated_since`
+  cases (future/past/omitted) plus validation, ETag/Last-Modified headers,
+  a true 304 on a matching `If-None-Match`, 200 again after a real change,
+  and the 30/minute rate limit. Full suite: 614 passed (up from 600), no
+  regressions.
+
+## Events, Listeners & queued push notifications (previous task)
 
 `restaurant-backend` only. Full detail — the event list, the two Listener
 shapes, the push abstraction and its Fake/Log implementations, the Job's

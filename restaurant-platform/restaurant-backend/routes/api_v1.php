@@ -64,6 +64,9 @@ Route::middleware(['auth:sanctum', 'ensure.active'])->group(function (): void {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::get('/orders/{order}/timeline', [OrderController::class, 'timeline']);
+    // See docs/ORDER_STATUS_POLLING.md — its own, more generous rate limit
+    // reflects that polling is exactly what this endpoint is for.
+    Route::get('/orders/{order}/status', [OrderController::class, 'status'])->middleware('throttle:order-status-poll');
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
     Route::post('/orders/{order}/reorder-preview', [OrderController::class, 'reorderPreview']);
     Route::post('/orders/{order}/review', [OrderReviewController::class, 'store']);

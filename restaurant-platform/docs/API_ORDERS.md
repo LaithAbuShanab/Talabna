@@ -111,8 +111,7 @@ cancel button without guessing), the full **status timeline**
 
 ## `GET /api/v1/orders/{order}/timeline`
 
-Just the status timeline (oldest first), for a client that wants to poll
-order progress without the full order payload:
+Just the status timeline (oldest first), no current-status summary:
 
 ```json
 [
@@ -120,6 +119,15 @@ order progress without the full order payload:
   { "status": "accepted", "note": null, "created_at": "2026-07-02T18:40:00+00:00" }
 ]
 ```
+
+## `GET /api/v1/orders/{order}/status`
+
+**The endpoint to poll** — full detail, recommended client interval, ETag/
+`updated_since` mechanics, rate limit, and the future WebSocket/Reverb
+migration path are all in **`docs/ORDER_STATUS_POLLING.md`**. Rate-limited
+separately (`order-status-poll`: 30/minute per user) rather than sharing a
+limiter with the rest of this document's endpoints, since polling is its
+whole purpose.
 
 ## `POST /api/v1/orders/{order}/cancel`
 

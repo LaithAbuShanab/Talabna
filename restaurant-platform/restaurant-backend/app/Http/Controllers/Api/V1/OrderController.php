@@ -16,10 +16,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Order\CancelOrderRequest;
 use App\Http\Requests\Api\V1\Order\CreateOrderRequest;
 use App\Http\Requests\Api\V1\Order\OrderIndexRequest;
+use App\Http\Requests\Api\V1\Order\OrderStatusRequest;
 use App\Http\Requests\Api\V1\Order\ReorderPreviewRequest;
 use App\Http\Resources\Cart\CartPreviewResource;
 use App\Http\Resources\OrderResource;
 use App\Http\Resources\OrderStatusHistoryResource;
+use App\Http\Resources\OrderStatusResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Order;
 use App\Services\CartPricingService;
@@ -123,6 +125,59 @@ class OrderController extends Controller
         $histories = $order->statusHistories()->oldest('created_at')->get();
 
         return ApiResponse::success(OrderStatusHistoryResource::collection($histories));
+    }
+
+    /**
+     * The lightweight polling endpoint ("ابدأ بالحل الأبسط: endpoint لجلب
+     * آخر حالة الطلب وtimeline") — what the customer app's poll loop calls
+     * while an order is active, instead of hammering `show()` (full order:
+     * items, payments, coupon, addresses) every few seconds. Two
+     * complementary "did anything change" mechanisms, both driven by the
+     * same `orders.updated_at`:
+     *
+     *   - `?updated_since=<ISO8601>`: if the order hasn't changed since
+     *     then, the response is just `{changed: false, status, updated_at}`
+     *     — the status-history query never even runs.
+     *   - Standard HTTP conditional GET (`ETag`/`Last-Modified`, computed
+     *     from `updated_at`): a client whose HTTP layer already understands
+     *     caching gets a true, empty-bodied `304` for free.
+     *
+     * Both exist because they suit different clients: `updated_since` only
+     * needs the caller to remember a timestamp string, while ETag/
+     * Last-Modified is the standard mechanism for anything already doing
+     * HTTP-level conditional requests. Rate-limited separately
+     * (`throttle:order-status-poll`, see AppServiceProvider) — more
+     * generous than a normal endpoint since polling is its whole purpose,
+     * but still capped against a runaway client. See
+     * docs/ORDER_STATUS_POLLING.md for the full polling strategy and the
+     * future WebSocket/Reverb migration path this Resource is shaped for.
+     */
+    public function status(OrderStatusRequest $request, Order $order): JsonResponse
+    {
+        Gate::authorize('view', $order);
+
+        $lastModified = $order->updated_at;
+        $etag = sprintf('"order-%d-%d"', $order->id, $lastModified?->getTimestamp() ?? 0);
+
+        $updatedSince = $request->date('updated_since');
+        $changed = $updatedSince === null || $lastModified === null || $lastModified->gt($updatedSince);
+
+        if ($changed) {
+            $order->load(['statusHistories' => fn ($query) => $query->oldest('created_at')]);
+            $data = ['changed' => true, ...(new OrderStatusResource($order))->resolve($request)];
+        } else {
+            $data = [
+                'changed' => false,
+                'status' => $order->status->value,
+                'updated_at' => $lastModified->toIso8601String(),
+            ];
+        }
+
+        $response = ApiResponse::success($data);
+        $response->setLastModified($lastModified)->setEtag($etag, true);
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     /**

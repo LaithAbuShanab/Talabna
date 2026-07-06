@@ -64,6 +64,16 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(3)->by($key);
         });
 
+        // Deliberately more generous than a typical endpoint — polling is
+        // this endpoint's entire purpose (see docs/ORDER_STATUS_POLLING.md
+        // for the recommended client interval, comfortably under this cap)
+        // — but still bounded, against a runaway/misbehaving client.
+        // Per-user, not per-IP: several orders/devices for the same account
+        // share one budget, which is the behavior worth limiting.
+        RateLimiter::for('order-status-poll', function ($request): Limit {
+            return Limit::perMinute(30)->by($request->user()?->id ?? $request->ip());
+        });
+
         // Invalidates App\Services\MenuCacheService whenever any menu-related
         // model is saved/deleted, regardless of what triggered it (Filament,
         // tinker, a seeder) — see App\Observers\MenuCacheObserver.
