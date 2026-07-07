@@ -63,19 +63,37 @@ Laravel projects that live side by side in this repository:
 - Laravel 13 application scaffolded with the official Livewire starter kit
   (Blade + Livewire + Tailwind), then layered with **NativePHP Mobile v3**
   (`nativephp/mobile`) to ship as an Android/iOS app.
+- **Authentication is entirely backend-API-based, not local.** The
+  starter kit's Laravel Fortify (local session auth, 2FA, passkeys) was
+  removed entirely — real customer identity lives only on
+  `restaurant-backend`, reached via Sanctum bearer tokens. The app's own
+  local `users` table/model exist only because Laravel's framework
+  internals expect a default auth provider; no real customer row is ever
+  created there. See `docs/CUSTOMER_APP_AUTH.md` for the 9 auth screens
+  (Splash, Onboarding, Login, Register, Forgot/Reset password, Logout,
+  Profile, Change password), the session-restoration flow, and the
+  confirmed-401-only token-clearing rule.
 - Has its own local SQLite database file, but that database is for the app's
   own local Laravel needs (sessions, cache, queue) and, later, **on-device
   caching of API responses only** — it is not a copy of, or a replacement for,
   the backend's database, and no restaurant/order domain tables live there.
-- Talks to `restaurant-backend` exclusively through its HTTPS REST API. The
-  backend base URL is configured via `RESTAURANT_BACKEND_URL` in `.env`.
+- Talks to `restaurant-backend` exclusively through its HTTPS REST API,
+  via a centralized `App\Services\Api\ApiClient` — base URL/timeout from
+  `config/api.php` (`RESTAURANT_BACKEND_URL`/`RESTAURANT_BACKEND_API_TIMEOUT`
+  in `.env`), limited retry on safe (GET/HEAD) requests only, typed
+  exceptions per failure mode, and safe (token/password-redacted) logging.
+  See `docs/CUSTOMER_APP_API_CLIENT.md` for the full architecture.
 - Ships with Arabic (`ar`) as the default UI locale and RTL layout support
   (`dir="rtl"` applied automatically based on `app()->getLocale()`), with
   English as the fallback locale.
-- At this stage only the base NativePHP setup is installed (`php artisan
-  native:install`, Android project scaffold under `nativephp/`). No additional
-  native device features (camera, push notifications, biometrics, etc.) have
-  been added yet — those are separate, explicitly-scoped tasks.
+- Base NativePHP setup is installed (`php artisan native:install`, Android
+  project scaffold under `nativephp/`); no additional native device
+  *features* (camera, push notifications, biometrics, etc.) have been
+  wired into the app's own UI yet — those remain separate, explicitly-scoped
+  tasks. The package does already ship `Native\Mobile\SecureStorage`
+  (Keychain/Keystore) and `Native\Mobile\Network` (connectivity status)
+  as part of the base install, and this app's `App\Support\SecureStorage`/
+  `App\Stores\NetworkStatusStore` already use both.
 
 ## Environments and configuration
 

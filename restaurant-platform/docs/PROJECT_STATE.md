@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-07-06 — initial scaffolding, local MySQL switch + GitHub push,
+Last updated: 2026-07-07 — initial scaffolding, local MySQL switch + GitHub push,
 unified quality standards, the full restaurant domain database schema,
 realistic local dev/demo seed data, the cart-pricing domain layer, the
 order-creation use case (checkout), the centralized order status
@@ -18,11 +18,157 @@ restaurant-configuration field, with delivery/pickup and tax-inclusive
 rules enforced for real in checkout pricing, a full Events/Listeners/
 queued-Jobs notification system: a push-provider abstraction, device-token
 storage, idempotent retryable delivery, and an admin database notification
-on every new order, then a lightweight, rate-limited order-status polling
+on every new order, a lightweight, rate-limited order-status polling
 endpoint for the customer app, with an ETag/`updated_since` cheap-revalidation
-mechanism and a documented (not yet built) path to WebSockets/Reverb.
+mechanism and a documented (not yet built) path to WebSockets/Reverb, the
+first real application architecture inside `restaurant-customer-app`
+itself: a centralized API client (base URL/timeout/retry/error-mapping/
+safe logging), typed exceptions and DTOs, secure token storage, and a
+generic error/offline/dev-health-check screen, and now the customer app's
+complete, and only, authentication system: Fortify replaced entirely by 9
+screens (Splash, Onboarding, Login, Register, Forgot/Reset password,
+Logout, Profile, Change password) calling `restaurant-backend`'s Sanctum
+API directly, with confirmed-401-only token clearing, transient-failure-
+safe session restoration on app open, and device-name capture at login.
 
-## Order status polling for the customer app (this task)
+## Customer app authentication: Fortify replaced with backend-API auth (this task)
+
+`restaurant-customer-app` only. Full detail — the Fortify-removal
+rationale, the session-restoration state machine, the confirmed-401 vs.
+403 vs. transient-failure token-clearing rule, the no-deep-link password
+reset decision, and per-screen behavior — is in the new
+**`docs/CUSTOMER_APP_AUTH.md`**; this section is a pointer/summary.
+
+- **Fortify removed entirely**, per explicit user choice (asked via a
+  direct question rather than assumed, since it was a genuine architectural
+  fork): package, `FortifyServiceProvider`, `app/Actions/Fortify/`,
+  `PasswordValidationRules`/`ProfileValidationRules` traits, 2FA/passkey
+  traits off `User`, the 2FA/passkey `users` columns (dropped via a new
+  migration), and every Fortify-dependent view/test. The local `users`
+  table/`User` model remain only because Laravel's framework internals
+  expect a default auth provider — no real customer row is ever created
+  there, and nothing in the new screens uses the `Auth` facade or session
+  guard.
+- **9 screens, all Blaze single-file Livewire components**, reusing
+  Fortify's former routes (`/login`, `/register`, `/settings/profile`,
+  etc.) but now calling `restaurant-backend`'s REST API through the
+  existing `App\Services\Api\ApiClient` for everything: Splash (`/`,
+  session restoration), Onboarding (`/onboarding`), Login, Register,
+  Forgot password, Reset password (all under `auth.php`), Logout
+  (confirmation screen, not instant), Profile, Change password.
+- **`ApiClient::parseResponse()` extended**: a confirmed HTTP 401 now
+  clears `AuthTokenStore` immediately, before the exception is even
+  thrown; a 403 (valid token, forbidden resource) never clears it; any
+  connectivity failure (`ApiConnectivityException`) is raised before a
+  response exists at all, so it can never reach this code path — this one
+  change satisfies "حذف token عند 401 المؤكد" and "عدم حذف الجلسة بسبب
+  timeout عابر" simultaneously. Verified by 4 new dedicated tests and live
+  against a real, invalid token on `restaurant-backend`.
+- **No deep link for password reset** — confirmed via the pre-existing
+  `docs/API_AUTH.md` (the backend deliberately emails a raw reset token,
+  not a URL, since it's API-only) and `config/nativephp.php`'s unset
+  `deeplink_scheme`/`deeplink_host`. Reset Password is a manual-entry form
+  (email + token + new password) instead.
+- **New supporting code**: `App\Data\Api\{AuthUserData,AuthResultData}`
+  DTOs; `App\Support\DeviceNameResolver` (reads `Device::getInfo()`
+  defensively, only `platform` is guaranteed present); `App\Stores\
+  OnboardingStore` (reuses `SecureStorage` for a `onboarding_completed`
+  flag); `App\Http\Middleware\EnsureBackendSessionExists` (alias
+  `backend.auth`, gates the 4 authenticated routes on
+  `AuthTokenStore::hasToken()` only — not a per-request validity check);
+  `App\Concerns\HandlesApiExceptions` (shared by all 6 form screens: local
+  validation errors and server 422s both land in Livewire's native
+  `addError()` bag via one trait); 8 new `App\Actions\Api\*` classes.
+- **Loading states + double-tap prevention**: purely declarative
+  (`wire:loading.attr="disabled" wire:target="..."`), no server-side
+  `$isSubmitting` property anywhere. **Password show/hide**: Flux's
+  built-in `viewable` attribute on `flux:input type="password"`, no custom
+  logic. **Social login**: not implemented, as instructed — no
+  scaffolding of any kind added.
+- `device_name` (from `DeviceNameResolver`) is sent on both
+  `POST /auth/register` and `POST /auth/login`.
+- Tests: 9 new screen test files (one `Livewire::test` suite per screen,
+  43 tests total) + `AuthActionsTest` (13), `DeviceNameResolverTest` (4),
+  `OnboardingStoreTest` (2), `EnsureBackendSessionExistsTest` (2), plus 4
+  new tests extending `ApiClientTest` (now 25). Removed the now-stale
+  starter-kit `ExampleTest` (asserted `GET /` → 200; `/` is now Splash,
+  which always redirects — fully superseded by `SplashTest`'s 6 tests).
+  Full suite: **109 passed**. `pint`/`phpstan` (level 7) both clean — one
+  `phpstan.neon` `ignoreErrors` entry was added for `App\Concerns\
+  HandlesApiExceptions` (`trait.unused`): it's genuinely used, but only
+  from Blaze `.blade.php` files, which phpstan's PHP-file scanner never
+  parses.
+- Verified live end-to-end against a real, running `restaurant-backend`
+  (register, profile fetch/update, change password, logout, re-login,
+  forgot/reset password with a real emailed token, confirmed-401 token
+  clearing) — see `docs/CUSTOMER_APP_AUTH.md` for the full walkthrough.
+
+## `restaurant-customer-app` API client foundation (previous task)
+
+`restaurant-customer-app` only. Full detail — the directory structure, the
+exception hierarchy, the retry/idempotency contract, the secure-storage
+story, and every security decision — is in the new
+**`docs/CUSTOMER_APP_API_CLIENT.md`**; this section is a pointer/summary.
+
+- **New directory structure**: `App\Services\Api` (the client),
+  `App\Data\Api` (DTOs), `App\Actions\Api` (use cases),
+  `App\Stores` (`AuthTokenStore`, `NetworkStatusStore` — this app's state
+  layer, appropriate for Livewire: server-side, not a client-side JS
+  store), `App\Support` (`SecureStorage`, `SafeLog`),
+  `App\Exceptions\Api` (nine typed exceptions).
+- **`App\Services\Api\ApiClient`** — the single seam to
+  `restaurant-backend`. Base URL/timeout from new `config/api.php`
+  (reading the pre-existing `RESTAURANT_BACKEND_URL`/
+  `RESTAURANT_BACKEND_API_TIMEOUT` env vars). Refuses to construct with a
+  non-HTTPS base URL once `APP_ENV=production`. Retries (Laravel's
+  `PendingRequest::retry()`, with an explicit `when` callback restricting
+  it to real `ConnectionException`s) only for GET/HEAD — a 4xx/5xx
+  response, or any non-safe method, is never retried.
+- **Nine exceptions** (`App\Exceptions\Api`): `ApiOfflineException`
+  (device known offline, checked proactively — fails before even
+  attempting the request), `ApiTimeoutException`/`ApiConnectionException`
+  (both from Laravel's one `ConnectionException` type, classified by
+  message heuristic), `ApiUnauthorizedException` (401/403),
+  `ApiValidationException` (422, carries field errors),
+  `ApiRateLimitedException` (429, carries `Retry-After`),
+  `ApiServerException` (5xx), `ApiUnexpectedResponseException`
+  (malformed JSON or an unmapped status).
+- **`App\Support\SecureStorage`** — delegates to the already-installed
+  `Native\Mobile\SecureStorage` (Keychain/Keystore), falling back to an
+  **explicitly `Crypt`-encrypted** Laravel session (never plaintext, never
+  `localStorage`) only in the one context the native bridge can't reach:
+  plain-browser local development. A real device's native call always
+  succeeds, so the fallback path is simply never reached there.
+  **`App\Stores\AuthTokenStore`** is the one place the future backend
+  Sanctum token would be read/written, built on top of it.
+- **`App\Support\SafeLog`** — redacts tokens/passwords/secrets (exact
+  keys and `*_token`/`*_password`/`*_secret`/`*_key` suffixes,
+  case-insensitive, recursive) before `ApiClient` logs any request/
+  response; the response body itself is never logged at all.
+- **Three screens**: `/error` (generic, redirect target for an
+  unrecoverable `ApiException`), `/offline` (polls
+  `NetworkStatusStore` every 5s, bounces home once reconnected),
+  `/dev/health` (development-only — the route is only registered when
+  `app()->environment('local')` — calls the backend's `/health` endpoint
+  and shows status/response time).
+- **Found and fixed a real bug while writing tests, not by inspection**:
+  `PendingRequest::retry($times, $delay, throw: false)` alone still retries
+  a plain 4xx/5xx *response* (not just connection failures) on every
+  attempt but the last — a `when` callback restricting retries to
+  `ConnectionException` instances was required to actually satisfy "retry
+  محدود فقط للطلبات الآمنة" for connectivity failures only, never bad
+  responses. Caught by `test_retry_never_converts_a_4xx_response_into_an_exception_that_bypasses_status_handling`.
+- **Also found**: `function_exists('nativephp_call')` is *always* true
+  once `nativephp/mobile` is autoloaded (it ships a Jump-hybrid-mode
+  fallback implementation of that function) — it cannot be used to detect
+  "is a real native bridge present". Fixed by attempting the native call
+  and treating a negative/`null` result as the signal instead, exactly
+  like the package's own classes do internally.
+- Tests: 45 new, all via `Illuminate\Support\Facades\Http::fake()` — no
+  test depends on network access. Full suite: 78 passed, up from the
+  starter kit's original baseline.
+
+## Order status polling for the customer app (previous task)
 
 `restaurant-backend` only. Full detail — the response shape, ETag/
 `updated_since` mechanics, recommended client polling interval, and the

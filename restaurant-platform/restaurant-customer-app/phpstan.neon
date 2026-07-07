@@ -11,3 +11,10 @@ parameters:
         - routes/
 
     level: 7
+
+    ignoreErrors:
+        -
+            # Used only by Blaze single-file Livewire components (resources/views/pages/**/⚡*.blade.php),
+            # which phpstan's PHP scanner never parses since they aren't .php files.
+            identifier: trait.unused
+            path: app/Concerns/HandlesApiExceptions.php

@@ -1,124 +1,128 @@
 <?php
 
-use App\Concerns\ProfileValidationRules;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Flux\Flux;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Session;
-use Livewire\Attributes\Computed;
+use App\Actions\Api\FetchProfileAction;
+use App\Actions\Api\UpdateProfileAction;
+use App\Concerns\HandlesApiExceptions;
+use App\Exceptions\Api\ApiException;
+use App\Exceptions\Api\ApiUnauthorizedException;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Profile settings')] class extends Component {
-    use ProfileValidationRules;
+/**
+ * Always fetches fresh from `GET /api/v1/profile` on mount rather than
+ * trusting any locally cached copy — see docs/CUSTOMER_APP_AUTH.md.
+ */
+new #[Title('Profile settings')] class extends Component
+{
+    use HandlesApiExceptions;
 
     public string $name = '';
+
     public string $email = '';
 
-    /**
-     * Mount the component.
-     */
-    public function mount(): void
+    public ?string $phone = null;
+
+    public bool $saved = false;
+
+    public function mount(FetchProfileAction $fetchProfile): void
     {
-        $this->name = Auth::user()->name;
-        $this->email = Auth::user()->email;
-    }
+        try {
+            $user = $fetchProfile->execute();
+        } catch (ApiUnauthorizedException) {
+            $this->redirect(route('login'), navigate: true);
 
-    /**
-     * Update the profile information for the currently authenticated user.
-     */
-    public function updateProfileInformation(): void
-    {
-        $user = Auth::user();
-
-        $validated = $this->validate($this->profileRules($user->id));
-
-        $user->fill($validated);
-
-        if ($user->isDirty('email')) {
-            $user->email_verified_at = null;
-        }
-
-        $user->save();
-
-        Flux::toast(variant: 'success', text: __('Profile updated.'));
-    }
-
-    /**
-     * Send an email verification notification to the current user.
-     */
-    public function resendVerificationNotification(): void
-    {
-        $user = Auth::user();
-
-        if ($user->hasVerifiedEmail()) {
-            $this->redirectIntended(default: route('dashboard', absolute: false));
+            return;
+        } catch (ApiException $e) {
+            $this->handleApiException($e);
 
             return;
         }
 
-        $user->sendEmailVerificationNotification();
-
-        Session::flash('status', 'verification-link-sent');
+        $this->name = $user->name;
+        $this->email = $user->email;
+        $this->phone = $user->phone;
     }
 
-    #[Computed]
-    public function hasUnverifiedEmail(): bool
+    /**
+     * @return array<string, mixed>
+     */
+    protected function rules(): array
     {
-        return Auth::user() instanceof MustVerifyEmail && ! Auth::user()->hasVerifiedEmail();
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+        ];
     }
 
-    #[Computed]
-    public function showDeleteUser(): bool
+    public function save(UpdateProfileAction $action): void
     {
-        return ! Auth::user() instanceof MustVerifyEmail
-            || (Auth::user() instanceof MustVerifyEmail && Auth::user()->hasVerifiedEmail());
+        $this->generalError = null;
+        $this->saved = false;
+        $validated = $this->validate();
+
+        try {
+            $user = $action->execute($validated);
+        } catch (ApiUnauthorizedException) {
+            $this->redirect(route('login'), navigate: true);
+
+            return;
+        } catch (ApiException $e) {
+            $this->handleApiException($e);
+
+            return;
+        }
+
+        $this->name = $user->name;
+        $this->email = $user->email;
+        $this->phone = $user->phone;
+        $this->saved = true;
     }
 }; ?>
 
 <section class="w-full">
     @include('partials.settings-heading')
 
-    <flux:heading class="sr-only">{{ __('Profile settings') }}</flux:heading>
+    <flux:heading class="sr-only">{{ __('auth.profile.title') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Profile')" :subheading="__('Update your name and email address')">
-        <form wire:submit="updateProfileInformation" class="my-6 w-full space-y-6">
-            <flux:input wire:model="name" :label="__('Name')" type="text" required autofocus autocomplete="name" />
+    <x-pages::settings.layout :heading="__('auth.profile.title')" :subheading="__('auth.profile.title')">
+        @if ($generalError)
+            <flux:callout variant="danger" icon="exclamation-triangle" heading="{{ $generalError }}" class="mb-6" />
+        @endif
 
-            <div>
-                <flux:input wire:model="email" :label="__('Email')" type="email" required autocomplete="email" />
+        @if ($saved)
+            <flux:callout variant="success" icon="check-circle" heading="{{ __('auth.profile.saved') }}" class="mb-6" />
+        @endif
 
-                @if ($this->hasUnverifiedEmail)
-                    <div>
-                        <flux:text class="mt-4">
-                            {{ __('Your email address is unverified.') }}
+        <form wire:submit="save" class="my-6 w-full space-y-6">
+            <flux:input wire:model="name" :label="__('auth.profile.name')" type="text" required autofocus autocomplete="name" />
 
-                            <flux:link class="text-sm cursor-pointer" wire:click.prevent="resendVerificationNotification">
-                                {{ __('Click here to re-send the verification email.') }}
-                            </flux:link>
-                        </flux:text>
+            <flux:input wire:model="email" :label="__('auth.profile.email')" type="email" required autocomplete="email" />
 
-                        @if (session('status') === 'verification-link-sent')
-                            <flux:text class="mt-2 font-medium !dark:text-green-400 !text-green-600">
-                                {{ __('A new verification link has been sent to your email address.') }}
-                            </flux:text>
-                        @endif
-                    </div>
-                @endif
-            </div>
+            <flux:input wire:model="phone" :label="__('auth.profile.phone')" type="tel" autocomplete="tel" />
 
-            <div class="flex items-center gap-4">
-                <div class="flex items-center justify-end">
-                    <flux:button variant="primary" type="submit" class="w-full" data-test="update-profile-button">
-                        {{ __('Save') }}
-                    </flux:button>
-                </div>
-
-            </div>
+            <flux:button
+                type="submit"
+                variant="primary"
+                wire:loading.attr="disabled"
+                wire:target="save"
+                data-test="update-profile-button"
+            >
+                <span wire:loading.remove wire:target="save">{{ __('auth.profile.save') }}</span>
+                <span wire:loading wire:target="save">{{ __('Loading...') }}</span>
+            </flux:button>
         </form>
 
-        @if ($this->showDeleteUser)
-            <livewire:pages::settings.delete-user-form />
-        @endif
+        <flux:separator class="my-6" />
+
+        <div class="flex flex-col gap-3 sm:flex-row">
+            <flux:button :href="route('change-password')" variant="ghost" wire:navigate>
+                {{ __('auth.profile.change_password') }}
+            </flux:button>
+
+            <flux:button :href="route('logout')" variant="ghost" wire:navigate>
+                {{ __('auth.profile.log_out') }}
+            </flux:button>
+        </div>
     </x-pages::settings.layout>
 </section>
